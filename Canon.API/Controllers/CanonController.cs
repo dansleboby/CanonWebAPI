@@ -6,7 +6,6 @@ using System.Text;
 namespace Canon.API.Controllers;
 
 [ApiController]
-[Route("[controller]")]
 public class CanonController : ControllerBase
 {
     private readonly CanonCamera _camera;
