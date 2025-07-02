@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.Core", "Canon.Core\Ca
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.Test", "Canon.Test\Canon.Test.csproj", "{C16DE6F4-9C4B-48C0-B450-F190F4614848}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.API", "Canon.API\Canon.API.csproj", "{05FAECFC-CD88-49F1-BB49-89D6125CAE1D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{C16DE6F4-9C4B-48C0-B450-F190F4614848}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C16DE6F4-9C4B-48C0-B450-F190F4614848}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C16DE6F4-9C4B-48C0-B450-F190F4614848}.Release|Any CPU.Build.0 = Release|Any CPU
+		{05FAECFC-CD88-49F1-BB49-89D6125CAE1D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{05FAECFC-CD88-49F1-BB49-89D6125CAE1D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{05FAECFC-CD88-49F1-BB49-89D6125CAE1D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{05FAECFC-CD88-49F1-BB49-89D6125CAE1D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

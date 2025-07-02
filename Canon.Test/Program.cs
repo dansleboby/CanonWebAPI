@@ -1,32 +1,32 @@
 ﻿using Canon.Core;
+using Microsoft.Extensions.Logging;
 using Serilog;
-using Serilog.Core;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
-    .CreateLogger();
+    .CreateLogger(); 
 
-using var canonCamera = new CanonCamera(Log.Logger);
-Console.WriteLine(await canonCamera.GetCameraName());
+var logger = LoggerFactory.Create(loggingBuilder => loggingBuilder.AddSerilog()).CreateLogger("");
 
-Console.WriteLine();
-Console.WriteLine(await canonCamera.GetValue(CameraProperty.ISOSpeed));
-Console.WriteLine(string.Join(" | ", await canonCamera.GetSupportedValues(CameraProperty.ISOSpeed)));
+using var canonCamera = new CanonCamera(logger);
+logger.LogInformation("Camera name: {v}", await canonCamera.GetCameraName());
 
 Console.WriteLine();
-Console.WriteLine(await canonCamera.GetValue(CameraProperty.Aperture));
-Console.WriteLine(string.Join(" | ", await canonCamera.GetSupportedValues(CameraProperty.Aperture)));
+logger.LogInformation("ISO: {v}", await canonCamera.GetValue(CameraProperty.ISOSpeed));
+logger.LogInformation("Supported ISO values: {v}", string.Join("|", await canonCamera.GetSupportedValues(CameraProperty.ISOSpeed)));
 
 Console.WriteLine();
-Console.WriteLine(await canonCamera.GetValue(CameraProperty.ShutterSpeed));
-Console.WriteLine(string.Join(" | ", await canonCamera.GetSupportedValues(CameraProperty.ShutterSpeed)));
+logger.LogInformation("Aperture: {v}", await canonCamera.GetValue(CameraProperty.Aperture));
+logger.LogInformation("Supported Aperture values: {v}", string.Join("|", await canonCamera.GetSupportedValues(CameraProperty.Aperture)));
 
 Console.WriteLine();
-Console.WriteLine(await canonCamera.GetValue(CameraProperty.WhiteBalance));
-Console.WriteLine(string.Join(" | ", await canonCamera.GetSupportedValues(CameraProperty.WhiteBalance)));
+logger.LogInformation("Shutter Speed: {v}", await canonCamera.GetValue(CameraProperty.ShutterSpeed));
+logger.LogInformation("Supported Shutter Speed values: {v}", string.Join("|", await canonCamera.GetSupportedValues(CameraProperty.ShutterSpeed)));
+
+Console.WriteLine();
+logger.LogInformation("White Balance: {v}", await canonCamera.GetValue(CameraProperty.WhiteBalance));
+logger.LogInformation("Supported White Balance values: {v}", string.Join("|", await canonCamera.GetSupportedValues(CameraProperty.WhiteBalance)));
 
 Console.WriteLine();
 var bytes = await canonCamera.TakePicture();
-Console.WriteLine($"Picture taken, {bytes.Length} bytes received.");
-
-Console.ReadKey();
+logger.LogInformation("Picture taken, {v} bytes received", bytes.Length);

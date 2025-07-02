@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using System.Runtime.InteropServices;
 
 namespace Canon.Core;
 
@@ -12,8 +13,9 @@ public class CanonCamera : IDisposable
     private readonly EDSDK.EdsStateEventHandler _onCameraStateChanged;
 
     private TaskCompletionSource<byte[]>? _takePictureCompletion;
+    private byte[]? _latestImageBytes;
 
-    public CanonCamera(ILogger<CanonCamera>? logger = null)
+    public CanonCamera(ILogger? logger = null)
     {
         _thread = new CanonThread(logger);
         _onCameraObject = OnCameraObject;
@@ -75,9 +77,6 @@ public class CanonCamera : IDisposable
     public async Task<string> GetCameraName()
     {
         await InitializeAsync();
-            
-        if (_camera == nint.Zero) 
-            throw new InvalidOperationException("Camera not initialized");
 
         return await _thread.InvokeAsync(() =>
         {
@@ -120,7 +119,7 @@ public class CanonCamera : IDisposable
     {
         await InitializeAsync();
         
-        await _thread.InvokeAsync(() => EDSDK.EdsSetPropertyData(_camera, (uint)propId, 0, sizeof(uint), value).ThrowIfEdSdkError($"Could not set property 0x{propId:X} to {value}"));
+        await _thread.InvokeAsync(() => EDSDK.EdsSetPropertyData(_camera, (uint)propId, 0, sizeof(uint), value).ThrowIfEdSdkError($"Could not set property {propId} to {value}"));
     }
 
     public Task SetValue(CameraProperty propId, string description)
@@ -128,11 +127,13 @@ public class CanonCamera : IDisposable
         var descriptions = ((uint)propId).GetPropertyDescriptions();
         
         if (!descriptions.TryGetValue(description, out var value))
-            throw new ArgumentException($"Invalid value '{value}' for property 0x{propId:X}");
+            throw new ArgumentException($"Invalid value '{description}' for property {propId}");
 
         return SetValue(propId, value);
     }
 
+    public Task<byte[]?> GetLatestImageBytes() => Task.FromResult(_latestImageBytes);
+    
     public async Task<byte[]> TakePicture(bool useAutoFocus = true)
     {
         await InitializeAsync();
@@ -160,6 +161,38 @@ public class CanonCamera : IDisposable
         {
             throw new TimeoutException("The camera didn't produce a JPG image within specified timeout. Check focus and camera settings");
         }
+    }
+
+    public async Task<byte[]?> GetLiveView()
+    {
+        await InitializeAsync();
+
+        return await _thread.InvokeAsync(() =>
+        {
+            var evfImage = nint.Zero;
+            var stream = nint.Zero;
+
+            try
+            {
+                EDSDK.EdsCreateMemoryStream(0, out stream).ThrowIfEdSdkError("Could not create memory stream for EVF image");
+                EDSDK.EdsCreateEvfImageRef(stream, out evfImage).ThrowIfEdSdkError("Could not create EVF image reference");
+
+                if (EDSDK.EdsDownloadEvfImage(_camera, evfImage) != EDSDK.EDS_ERR_OK)
+                    return null;
+
+                EDSDK.EdsGetPointer(stream, out var imagePtr).ThrowIfEdSdkError("Could not get stream pointer");
+                EDSDK.EdsGetLength(stream, out var length).ThrowIfEdSdkError("Could not get stream length");
+
+                var bytes = new byte[length];
+                Marshal.Copy(imagePtr, bytes, 0, (int)length);
+                return bytes;
+            }
+            finally
+            {
+                if (stream != nint.Zero) EDSDK.EdsRelease(stream);
+                if (evfImage != nint.Zero) EDSDK.EdsRelease(evfImage);
+            }
+        });
     }
 
     private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
@@ -199,7 +232,8 @@ public class CanonCamera : IDisposable
                     {
                         // Ignore temp file deletion errors
                     }
-                    
+ 
+                    _latestImageBytes = bytes;
                     _takePictureCompletion?.SetResult(bytes);
                 }
                 catch (Exception exception)
