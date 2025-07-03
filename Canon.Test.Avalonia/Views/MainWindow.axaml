@@ -13,8 +13,6 @@
     MinHeight="600">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
@@ -38,19 +36,19 @@
                 </StackPanel.Styles>
 
                 <HeaderedContentControl Header="ISO">
-                    <ComboBox SelectedItem="{Binding SelectedIsoValue}" ItemsSource="{Binding IsoValues}"/>
+                    <ComboBox SelectedItem="{Binding Iso}" ItemsSource="{Binding IsoValues}"/>
                 </HeaderedContentControl>
 
                 <HeaderedContentControl Header="Av">
-                    <ComboBox SelectedItem="{Binding SelectedApertureValue}" ItemsSource="{Binding ApertureValues}"/>
+                    <ComboBox SelectedItem="{Binding Aperture}" ItemsSource="{Binding ApertureValues}"/>
                 </HeaderedContentControl>
 
                 <HeaderedContentControl Header="Tv">
-                    <ComboBox SelectedItem="{Binding SelectedShutterSpeedValue}" ItemsSource="{Binding ShutterSpeedValues}"/>
+                    <ComboBox SelectedItem="{Binding ShutterSpeed}" ItemsSource="{Binding ShutterSpeedValues}"/>
                 </HeaderedContentControl>
 
                 <HeaderedContentControl Header="White balance">
-                    <ComboBox SelectedItem="{Binding SelectedWhiteBalanceValue}" ItemsSource="{Binding WhiteBalanceValues}"/>
+                    <ComboBox SelectedItem="{Binding WhiteBalance}" ItemsSource="{Binding WhiteBalanceValues}"/>
                 </HeaderedContentControl>
             </StackPanel>
 
@@ -59,9 +57,13 @@
             
                 <TextBlock Text="{Binding Error}" Foreground="DarkRed" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxLines="3"/>
 
-                <StackPanel Spacing="10" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Command="{Binding FocusCommand}">Focus</Button>
-                    <Button Command="{Binding TakePictureCommand}">Take picture</Button>
+                <StackPanel>
+                    <CheckBox IsChecked="{Binding AutoFocus}" Content="Auto focus" HorizontalAlignment="Right"/>
+
+                    <StackPanel Spacing="10" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Command="{Binding FocusCommand}">Focus</Button>
+                        <Button Command="{Binding TakePictureCommand}">Take picture</Button>
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
         </Grid>

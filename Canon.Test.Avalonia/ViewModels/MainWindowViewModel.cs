@@ -2,81 +2,44 @@
 using System.IO;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Avalonia.Collections;
 using Avalonia.Media.Imaging;
 using Canon.Core;
 using ReactiveUI;
+using ReactiveUI.Fody.Helpers;
 
 namespace Canon.Test.Avalonia.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
     private readonly CanonCamera _camera = new();
-    private string _cameraName = "Loading...";
-    private Bitmap? _liveImage;
-
-    private string? _selectedIsoValue;
-    private string? _selectedApertureValue;
-    private string? _selectedWhiteBalanceValue;
-    private string? _selectedShutterSpeedValue;
-    private Bitmap? _takenImage;
-    private string? _error;
-
-    public string CameraName
-    {
-        get => _cameraName;
-        private set => this.RaiseAndSetIfChanged(ref _cameraName, value);
-    }
-
-    public Bitmap? LiveImage
-    {
-        get => _liveImage;
-        private set => Set(ref _liveImage, value);
-    }
-
-    public Bitmap? TakenImage
-    {
-        get => _takenImage;
-        set => Set(ref _takenImage, value);
-    }
 
     public AvaloniaList<String> IsoValues { get; } = new();
-
+    
     public AvaloniaList<String> ApertureValues { get; } = new();
 
     public AvaloniaList<String> ShutterSpeedValues { get; } = new();
 
     public AvaloniaList<String> WhiteBalanceValues { get; } = new();
 
-    public string? SelectedIsoValue
-    {
-        get => _selectedIsoValue;
-        set => Set(ref _selectedIsoValue, value);
-    }
+    [Reactive] public string CameraName { get; private set; } = "Loading...";
 
-    public string? SelectedApertureValue
-    {
-        get => _selectedApertureValue;
-        set => Set(ref _selectedApertureValue, value);
-    }
+    [Reactive] public Bitmap? LiveImage { get; private set; }
 
-    public string? SelectedWhiteBalanceValue
-    {
-        get => _selectedWhiteBalanceValue;
-        set => Set(ref _selectedWhiteBalanceValue, value);
-    }
+    [Reactive] public Bitmap? TakenImage { get; private set; }
 
-    public string? SelectedShutterSpeedValue
-    {
-        get => _selectedShutterSpeedValue;
-        set => Set(ref _selectedShutterSpeedValue, value);
-    }
+    [Reactive] public bool AutoFocus { get; set; } = true;
 
-    public string? Error
-    {
-        get => _error;
-        private set => Set(ref _error, value);
-    }
+    [Reactive] public string? Iso { get; set; }
+
+    [Reactive] public string? Aperture { get; set; }
+
+    [Reactive] public string? WhiteBalance { get; set; }
+
+    [Reactive] public string? ShutterSpeed { get; set; }
+
+    [Reactive] public string? Error { get; private set; }
 
     public ReactiveCommand<Unit, Unit> FocusCommand { get; }
 
@@ -86,40 +49,13 @@ public class MainWindowViewModel : ViewModelBase
     {
         FocusCommand = ReactiveCommand.CreateFromTask(() => _camera.AutoFocus());
         
-        TakePictureCommand = ReactiveCommand.CreateFromTask(async () =>
-        {
-            try
-            {
-                Error = null;
+        TakePictureCommand = ReactiveCommand.CreateFromTask(TakePicture);
 
-                var bytes = await _camera.TakePicture();
+        Observable.Start(async () => await StartCamera());
 
-                if (bytes != null)
-                    TakenImage = new Bitmap(new MemoryStream(bytes));
-            }
-            catch(Exception ex)
-            {
-                Error = ex.Message;
-            }
-        });
+        Observable.Timer(TimeSpan.FromMilliseconds(500)).Subscribe(async _ => await UpdateLiveView());
 
-        Observable.Start(async () =>
-        {
-            CameraName = await _camera.GetCameraName();
-            IsoValues.AddRange(await _camera.GetSupportedValues(CameraProperty.ISOSpeed));
-            ApertureValues.AddRange(await _camera.GetSupportedValues(CameraProperty.Aperture));
-            ShutterSpeedValues.AddRange(await _camera.GetSupportedValues(CameraProperty.ShutterSpeed));
-            WhiteBalanceValues.AddRange(await _camera.GetSupportedValues(CameraProperty.WhiteBalance));
-
-            SelectedIsoValue = await _camera.GetValue(CameraProperty.ISOSpeed);
-            SelectedWhiteBalanceValue = await _camera.GetValue(CameraProperty.WhiteBalance);
-            SelectedApertureValue = await _camera.GetValue(CameraProperty.Aperture);
-            SelectedShutterSpeedValue = await _camera.GetValue(CameraProperty.ShutterSpeed);
-        });
-
-        Observable.Interval(TimeSpan.FromMilliseconds(10)).Subscribe(_ => UpdateLiveView());
-
-        this.WhenAnyValue(v => v.SelectedApertureValue)
+        this.WhenAnyValue(v => v.Aperture)
             .DistinctUntilChanged()
             .Throttle(TimeSpan.FromMilliseconds(300))
             .Where(v => v != null).Select(v => v!)
@@ -135,7 +71,7 @@ public class MainWindowViewModel : ViewModelBase
                 }
             });
 
-        this.WhenAnyValue(v => v.SelectedIsoValue)
+        this.WhenAnyValue(v => v.Iso)
             .DistinctUntilChanged()
             .Throttle(TimeSpan.FromMilliseconds(300))
             .Where(v => v != null).Select(v => v!)
@@ -151,7 +87,7 @@ public class MainWindowViewModel : ViewModelBase
                 }
             });
 
-        this.WhenAnyValue(v => v.SelectedWhiteBalanceValue)
+        this.WhenAnyValue(v => v.WhiteBalance)
             .DistinctUntilChanged()
             .Throttle(TimeSpan.FromMilliseconds(300))
             .Where(v => v != null).Select(v => v!)
@@ -167,7 +103,7 @@ public class MainWindowViewModel : ViewModelBase
                 }
             });
 
-        this.WhenAnyValue(v => v.SelectedShutterSpeedValue)
+        this.WhenAnyValue(v => v.ShutterSpeed)
             .DistinctUntilChanged()
             .Throttle(TimeSpan.FromMilliseconds(300))
             .Where(v => v != null).Select(v => v!)
@@ -184,11 +120,64 @@ public class MainWindowViewModel : ViewModelBase
             });
     }
 
-    private void UpdateLiveView()
+    private async Task TakePicture()
     {
-        var bytes = _camera.GetLiveView().Result;
+        try
+        {
+            Error = null;
 
-        if (bytes != null) 
-            LiveImage = new Bitmap(new MemoryStream(bytes));
+            var bytes = await _camera.TakePicture(AutoFocus);
+
+            if (bytes != null) TakenImage = new Bitmap(new MemoryStream(bytes));
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+    }
+
+    private async Task StartCamera()
+    {
+        try
+        {
+            CameraName = await _camera.GetCameraName();
+
+            IsoValues.AddRange(await _camera.GetSupportedValues(CameraProperty.ISOSpeed));
+            ApertureValues.AddRange(await _camera.GetSupportedValues(CameraProperty.Aperture));
+            ShutterSpeedValues.AddRange(await _camera.GetSupportedValues(CameraProperty.ShutterSpeed));
+            WhiteBalanceValues.AddRange(await _camera.GetSupportedValues(CameraProperty.WhiteBalance));
+
+            Iso = await _camera.GetValue(CameraProperty.ISOSpeed);
+            WhiteBalance = await _camera.GetValue(CameraProperty.WhiteBalance);
+            Aperture = await _camera.GetValue(CameraProperty.Aperture);
+            ShutterSpeed = await _camera.GetValue(CameraProperty.ShutterSpeed);
+
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            Observable.Timer(TimeSpan.FromSeconds(1)).Subscribe(async _ => await StartCamera());
+        }
+    }
+
+    private async Task UpdateLiveView()
+    {
+        try
+        {
+            var bytes = await _camera.GetLiveView();
+
+            if (bytes != null)
+                LiveImage = new Bitmap(new MemoryStream(bytes));
+
+            Observable.Timer(TimeSpan.FromMilliseconds(30)).Subscribe(async _ => await UpdateLiveView());
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            LiveImage = null;
+            Observable.Timer(TimeSpan.FromMilliseconds(100)).Subscribe(async _ => await StartCamera());
+            Observable.Timer(TimeSpan.FromMilliseconds(500)).Subscribe(async _ => await UpdateLiveView());
+        }
     }
 }
