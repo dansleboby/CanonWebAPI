@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq.Expressions;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
@@ -44,80 +46,39 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> FocusCommand { get; }
 
     public ReactiveCommand<Unit, Unit> TakePictureCommand { get; }
-    
+
     public MainWindowViewModel()
     {
         FocusCommand = ReactiveCommand.CreateFromTask(() => _camera.AutoFocus());
-        
+
         TakePictureCommand = ReactiveCommand.CreateFromTask(TakePicture);
 
         Observable.Start(async () => await StartCamera());
 
         Observable.Timer(TimeSpan.FromMilliseconds(500)).Subscribe(async _ => await UpdateLiveView());
 
-        this.WhenAnyValue(v => v.Aperture)
-            .DistinctUntilChanged()
-            .Throttle(TimeSpan.FromMilliseconds(300))
-            .Where(v => v != null).Select(v => v!)
-            .Subscribe(async v =>
+        new List<(CameraProperty property, Expression<Func<MainWindowViewModel, string?>> selector)>
             {
-                try
+                (CameraProperty.ISOSpeed, v => v.Iso),
+                (CameraProperty.Aperture, v => v.Aperture),
+                (CameraProperty.ShutterSpeed, v => v.ShutterSpeed),
+                (CameraProperty.WhiteBalance, v => v.WhiteBalance)
+            }
+            .ForEach(x => this.WhenAnyValue(x.selector)
+                .DistinctUntilChanged()
+                .Throttle(TimeSpan.FromMilliseconds(300))
+                .Where(v => v != null).Select(v => v!)
+                .Subscribe(async v =>
                 {
-                    await _camera.SetValue(CameraProperty.Aperture, v);
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                }
-            });
-
-        this.WhenAnyValue(v => v.Iso)
-            .DistinctUntilChanged()
-            .Throttle(TimeSpan.FromMilliseconds(300))
-            .Where(v => v != null).Select(v => v!)
-            .Subscribe(async v =>
-            {
-                try
-                {
-                    await _camera.SetValue(CameraProperty.ISOSpeed, v);
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                }
-            });
-
-        this.WhenAnyValue(v => v.WhiteBalance)
-            .DistinctUntilChanged()
-            .Throttle(TimeSpan.FromMilliseconds(300))
-            .Where(v => v != null).Select(v => v!)
-            .Subscribe(async v =>
-            {
-                try
-                {
-                    await _camera.SetValue(CameraProperty.WhiteBalance, v);
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                }
-            });
-
-        this.WhenAnyValue(v => v.ShutterSpeed)
-            .DistinctUntilChanged()
-            .Throttle(TimeSpan.FromMilliseconds(300))
-            .Where(v => v != null).Select(v => v!)
-            .Subscribe(async v =>
-            {
-                try
-                {
-                    await _camera.SetValue(CameraProperty.ShutterSpeed, v);
-                }
-                catch (Exception ex)
-                {
-                    Error = ex.Message;
-                }
-            });
+                    try
+                    {
+                        await _camera.SetValue(x.property, v);
+                    }
+                    catch (Exception ex)
+                    {
+                        Error = ex.Message;
+                    }
+                }));
     }
 
     private async Task TakePicture()
