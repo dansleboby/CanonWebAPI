@@ -1,0 +1,69 @@
+<Window 
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Canon.Test.Avalonia.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+    x:Class="Canon.Test.Avalonia.Views.MainWindow"
+    x:DataType="vm:MainWindowViewModel"
+    Icon="/Assets/avalonia-logo.ico"
+    Title="Canon.Test.Avalonia"
+    MinWidth="800"
+    MinHeight="600">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid ColumnDefinitions="*,250">
+        <Border Background="{DynamicResource ButtonBackground}">
+            <Image Source="{Binding LiveImage}"/>
+        </Border>
+
+        <TextBlock Grid.Column="0" FontSize="36" FontWeight="Bold" Foreground="White" Text="{Binding CameraName}" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock.Effect>
+                <DropShadowEffect BlurRadius="5" OffsetX="3" OffsetY="3" Color="Black"/>
+            </TextBlock.Effect>
+        </TextBlock>
+
+        <Grid Grid.Column="1" RowDefinitions="*,Auto" Margin="20">
+            <StackPanel Spacing="10">
+                <StackPanel.Styles>
+                    <Style Selector="ComboBox">
+                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                    </Style>
+                </StackPanel.Styles>
+
+                <HeaderedContentControl Header="ISO">
+                    <ComboBox SelectedItem="{Binding SelectedIsoValue}" ItemsSource="{Binding IsoValues}"/>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="Av">
+                    <ComboBox SelectedItem="{Binding SelectedApertureValue}" ItemsSource="{Binding ApertureValues}"/>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="Tv">
+                    <ComboBox SelectedItem="{Binding SelectedShutterSpeedValue}" ItemsSource="{Binding ShutterSpeedValues}"/>
+                </HeaderedContentControl>
+
+                <HeaderedContentControl Header="White balance">
+                    <ComboBox SelectedItem="{Binding SelectedWhiteBalanceValue}" ItemsSource="{Binding WhiteBalanceValues}"/>
+                </HeaderedContentControl>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Spacing="10">
+                <Image Source="{Binding TakenImage}" Stretch="Fill"/>
+            
+                <TextBlock Text="{Binding Error}" Foreground="DarkRed" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxLines="3"/>
+
+                <StackPanel Spacing="10" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Command="{Binding FocusCommand}">Focus</Button>
+                    <Button Command="{Binding TakePictureCommand}">Take picture</Button>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
