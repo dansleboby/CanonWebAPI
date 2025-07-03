@@ -167,11 +167,11 @@ public class CanonCamera : IDisposable
         {
             var values = ((uint)propId).GetPropertyValues();
             EDSDK.EdsGetPropertyDesc(_cameraRef, (uint)propId, out var desc).ThrowIfEdSdkError("EdsGetPropertyDesc failed");
-            
+
             return Enumerable.Range(0, desc.NumElements)
-                .Select(i => values.TryGetValue((uint)desc.PropDesc[i], out var description)
-                    ? description
-                    : desc.PropDesc[i].ToString())
+                .Select(i => values.GetValueOrDefault((uint)desc.PropDesc[i]))
+                .Where(x => x != null)
+                .Select(x => x!)
                 .ToList();
         });
     }
