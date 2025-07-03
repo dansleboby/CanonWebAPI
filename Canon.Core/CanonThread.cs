@@ -1,6 +1,10 @@
 ﻿using Microsoft.Extensions.Logging;
 
 namespace Canon.Core;
+
+/// <summary>
+/// A thread that runs in the background to handle Canon SDK tasks. 
+/// </summary>
 internal class CanonThread: IDisposable
 {
     private interface ITaskDesc
@@ -65,7 +69,7 @@ internal class CanonThread: IDisposable
 
             if (item == null)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(1);
                 EDSDK.EdsGetEvent();
             }
             else

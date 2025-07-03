@@ -391,7 +391,7 @@ internal static class EdsdkHelper
             case EDSDK.PropID_WhiteBalance: return WhiteBalanceValues;
             case EDSDK.PropID_ExposureCompensation: return ExposureCompensationValues;
 
-            default: throw new NotSupportedException();
+            default: throw new ArgumentOutOfRangeException();
         }
     }
 
