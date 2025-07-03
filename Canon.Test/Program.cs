@@ -29,4 +29,4 @@ logger.LogInformation("Supported White Balance values: {v}", string.Join("|", aw
 
 Console.WriteLine();
 var bytes = await canonCamera.TakePicture();
-logger.LogInformation("Picture taken, {v} bytes received", bytes.Length);
+logger.LogInformation("Picture taken, {v} bytes received", bytes?.Length ?? 0);
