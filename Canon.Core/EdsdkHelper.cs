@@ -5,7 +5,7 @@ internal static class EdsdkHelper
     public static void ThrowIfEdSdkError(this uint error, string message)
     {
         if (error != EDSDK.EDS_ERR_OK)
-            throw new EdsException(error, message);
+            throw new EdsException(error, message, null);
     }
 
     internal static readonly Dictionary<uint, string> ErrorMessages = new()
