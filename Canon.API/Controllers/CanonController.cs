@@ -6,61 +6,57 @@ using System.Text;
 namespace Canon.API.Controllers;
 
 [ApiController]
-public class CanonController : ControllerBase
+public class CanonController(ILogger<CanonController> logger, CanonCamera camera) : ControllerBase
 {
-    private readonly CanonCamera _camera;
-    private readonly ILogger<CanonController> _logger;
-
-    public CanonController(ILogger<CanonController> logger, CanonCamera camera)
-    {
-        _logger = logger;
-        _camera = camera;
-    }
-
     [HttpGet("cameraname")]
     public async Task<IActionResult> GetCameraName()
     {
-        _logger.LogInformation("Getting camera name");
-        return Ok(await _camera.GetCameraName());
+        logger.LogInformation("Getting camera name");
+        return Ok(await camera.GetCameraName());
     }
 
     private async Task<IActionResult> GetValue(CameraProperty property)
     {
-        _logger.LogInformation("Getting {Property} value", property);
+        logger.LogInformation("Getting {Property} value", property);
 
         try
         {
-            return Ok(new { value = await _camera.GetValue(property), supportedValues = await _camera.GetSupportedValues(property) });
+            return Ok(new { value = await camera.GetValue(property), supportedValues = await camera.GetSupportedValues(property) });
         }
         catch(ArgumentOutOfRangeException)
         {
-            _logger.LogWarning("Invalid value for {Property}", property);
+            logger.LogWarning("Invalid value for {Property}", property);
             return BadRequest($"Invalid value for {property}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting value for {Property}", property);
+            logger.LogError(ex, "Error getting value for {Property}", property);
             return StatusCode(500, "Internal server error");
         }
     }
 
     private async Task<IActionResult> SetValue(CameraProperty property, string value)
     {
-        _logger.LogInformation("Setting {Property} to {Value}", property, value);
+        logger.LogInformation("Setting {Property} to {Value}", property, value);
 
         try
         {
-            await _camera.SetValue(property, value);
+            await camera.SetValue(property, value);
             return Ok();
         }
         catch (ArgumentOutOfRangeException)
         {
-            _logger.LogWarning("Invalid value for {Property}", property);
+            logger.LogWarning("Invalid value for {Property}", property);
             return BadRequest($"Invalid value for {property}");
+        }
+        catch (EdsException ex)
+        {
+            logger.LogWarning(ex, "EdsException");
+            return BadRequest($"Camera error: {ex.Message}" );
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting value for {Property}", property);
+            logger.LogError(ex, "Error setting value for {Property}", property);
             return StatusCode(500, "Internal server error");
         }
     }
@@ -98,29 +94,34 @@ public class CanonController : ControllerBase
     [HttpPost("takepicture")]
     public async Task<IActionResult> TakePicture(bool useAutoFocus = true)
     {
-        _logger.LogInformation("Taking picture with auto focus: {UseAutoFocus}", useAutoFocus);
+        logger.LogInformation("Taking picture with auto focus: {UseAutoFocus}", useAutoFocus);
 
         try
         {
-            var bytes = await _camera.TakePicture(useAutoFocus);
+            var bytes = await camera.TakePicture(useAutoFocus);
             
             if (bytes?.Length > 0)
             {
-                _logger.LogInformation("Picture taken successfully, size: {Size} bytes", bytes.Length);
+                logger.LogInformation("Picture taken successfully, size: {Size} bytes", bytes.Length);
                 return File(bytes, "image/jpeg");
             }
 
-            _logger.LogWarning("No picture data received");
+            logger.LogWarning("No picture data received");
             return NotFound("No picture taken");
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning("Picture taking operation timed out");
+            logger.LogWarning("Picture taking operation timed out");
             return StatusCode(408, "Request Timeout");
+        }
+        catch (EdsException ex)
+        {
+            logger.LogWarning(ex, "EdsException");
+            return BadRequest($"Camera error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error taking picture");
+            logger.LogError(ex, "Error taking picture");
             return StatusCode(500, "Internal server error");
         }
     }
@@ -128,7 +129,7 @@ public class CanonController : ControllerBase
     [HttpGet("videostream")]
     public async Task GetVideoStream()
     {
-        _logger.LogInformation("Starting video stream");
+        logger.LogInformation("Starting video stream");
 
         try
         {
@@ -137,7 +138,7 @@ public class CanonController : ControllerBase
 
             while (!ct.IsCancellationRequested)
             {
-                var bytes = await _camera.GetLiveView();
+                var bytes = await camera.GetLiveView();
 
                 if (bytes?.Length > 0)
                 {
@@ -153,12 +154,18 @@ public class CanonController : ControllerBase
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("Video stream cancelled by client");
+            logger.LogInformation("Video stream cancelled by client");
             // Normal client disconnect
+        }
+        catch (EdsException ex)
+        {
+            logger.LogWarning(ex, "EdsException");
+            Response.StatusCode = 400;
+            await Response.WriteAsync($"Camera error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during video stream");
+            logger.LogError(ex, "Error during video stream");
             Response.StatusCode = 500;
             await Response.WriteAsync("Internal server error");
         }
@@ -167,24 +174,29 @@ public class CanonController : ControllerBase
     [HttpGet("latestpicture")]
     public async Task<IActionResult> GetLatestPicture()
     {
-        _logger.LogInformation("Getting latest picture");
+        logger.LogInformation("Getting latest picture");
 
         try
         {
-            var bytes = await _camera.GetLatestImageBytes();
+            var bytes = await camera.GetLatestImageBytes();
 
             if (bytes?.Length > 0)
             {
-                _logger.LogInformation("Returning latest picture with size {Size} bytes", bytes.Length);
+                logger.LogInformation("Returning latest picture with size {Size} bytes", bytes.Length);
                 return File(bytes, "image/jpeg");
             }
 
-            _logger.LogWarning("No latest picture available");
+            logger.LogWarning("No latest picture available");
             return NotFound("No latest picture available");
+        }
+        catch (EdsException ex)
+        {
+            logger.LogWarning(ex, "EdsException");
+            return BadRequest($"Camera error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting latest picture");
+            logger.LogError(ex, "Error getting latest picture");
             return StatusCode(500, "Internal server error");
         }
     }
@@ -192,17 +204,22 @@ public class CanonController : ControllerBase
     [HttpPost("autofocus")]
     public async Task<IActionResult> AutoFocus()
     {
-        _logger.LogInformation("Starting auto focus");
+        logger.LogInformation("Starting auto focus");
 
         try
         {
-            await _camera.AutoFocus();
-            _logger.LogInformation("Auto focus completed successfully");
+            await camera.AutoFocus();
+            logger.LogInformation("Auto focus completed successfully");
             return Ok();
+        }
+        catch (EdsException ex)
+        {
+            logger.LogWarning(ex, "EdsException");
+            return BadRequest($"Camera error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during auto focus");
+            logger.LogError(ex, "Error during auto focus");
             return StatusCode(500, "Internal server error");
         }
     }

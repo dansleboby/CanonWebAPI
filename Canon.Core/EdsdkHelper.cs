@@ -2,23 +2,13 @@
 
 internal static class EdsdkHelper
 {
-    public class EdsException : Exception
-    {
-        public EdsException(uint errorCode, string message) : base($"{message}: {(ErrorMessages.TryGetValue(errorCode, out var m) ? m : errorCode.ToString())}")
-        {
-            ErrorCode = errorCode;
-        }
-
-        public uint ErrorCode { get; }
-    }
-
     public static void ThrowIfEdSdkError(this uint error, string message)
     {
         if (error != EDSDK.EDS_ERR_OK)
             throw new EdsException(error, message);
     }
 
-    private static readonly Dictionary<uint, string> ErrorMessages = new()
+    internal static readonly Dictionary<uint, string> ErrorMessages = new()
     {
         // General errors
         { EDSDK.EDS_ERR_UNIMPLEMENTED, "Not implemented" },

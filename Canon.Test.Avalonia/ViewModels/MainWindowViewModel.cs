@@ -17,13 +17,13 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly CanonCamera _camera = new();
 
-    public AvaloniaList<String> IsoValues { get; } = new();
+    public AvaloniaList<string> IsoValues { get; } = new();
     
-    public AvaloniaList<String> ApertureValues { get; } = new();
+    public AvaloniaList<string> ApertureValues { get; } = new();
 
-    public AvaloniaList<String> ShutterSpeedValues { get; } = new();
+    public AvaloniaList<string> ShutterSpeedValues { get; } = new();
 
-    public AvaloniaList<String> WhiteBalanceValues { get; } = new();
+    public AvaloniaList<string> WhiteBalanceValues { get; } = new();
 
     [Reactive] public string CameraName { get; private set; } = "Loading...";
 
