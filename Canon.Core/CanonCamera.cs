@@ -114,7 +114,7 @@ public class CanonCamera : IDisposable
                     lock (_initLock) 
                         _initTask = null;
 
-                    throw new InvalidOperationException("Failed to initialize Canon camera", ex);
+                    throw new EdsException(EDSDK.EDS_ERR_DEVICE_INVALID, "Failed to initialize Canon camera", ex);
                 }
             });
         }
