@@ -1,0 +1,40 @@
+name: Build Canon.API
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore CanonSDK.sln
+      
+    - name: Build solution
+      run: dotnet build CanonSDK.sln --configuration Release --no-restore
+      
+    - name: Run tests (if any)
+      run: dotnet test --configuration Release --no-build --verbosity normal
+      continue-on-error: true
+      
+    - name: Publish Canon.API
+      run: dotnet publish Canon.API --configuration Release --output ./publish --no-build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: canon-api-build
+        path: ./publish/
+        retention-days: 30

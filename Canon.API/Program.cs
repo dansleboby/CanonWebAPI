@@ -15,6 +15,16 @@ try
     builder.Services.AddOpenApi();
     builder.Services.AddSwaggerGen();
 
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+    });
+
     builder.Services.AddSingleton<CanonCamera>();
 
     var app = builder.Build();
@@ -26,6 +36,7 @@ try
     }
 
     app.UseHttpsRedirection();
+    app.UseCors();
     app.UseAuthorization();
     app.MapControllers();
 
