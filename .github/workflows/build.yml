@@ -130,7 +130,8 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git checkout main
+        git fetch origin main
+        git checkout -B main origin/main
         git add docs/autoupdate.xml
         if (git diff --staged --quiet) {
           Write-Host "No changes to commit"
