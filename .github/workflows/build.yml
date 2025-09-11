@@ -106,18 +106,18 @@ jobs:
           New-Item -ItemType Directory -Path "docs"
         }
         
-        # Create AutoUpdater XML
-        $xml = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<item>
-  <version>$version</version>
-  <url>$releaseUrl</url>
-  <changelog>https://github.com/${{ github.repository }}/releases/tag/v$version</changelog>
-  <mandatory>false</mandatory>
-</item>
-"@
+        # Create AutoUpdater XML content
+        $xmlContent = @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <item>
+          <version>$version</version>
+          <url>$releaseUrl</url>
+          <changelog>https://github.com/${{ github.repository }}/releases/tag/v$version</changelog>
+          <mandatory>false</mandatory>
+        </item>
+        "@
         
-        $xml | Out-File -FilePath "docs/autoupdate.xml" -Encoding UTF8
+        $xmlContent | Out-File -FilePath "docs/autoupdate.xml" -Encoding UTF8
       shell: powershell
       
     - name: Commit and push XML changes
