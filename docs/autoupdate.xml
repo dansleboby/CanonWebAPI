@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <item>
-  <version>1.0.0</version>
-  <url>https://github.com/yourusername/CanonWebAPI/releases/download/v1.0.0/publish.zip</url>
-  <changelog>https://github.com/yourusername/CanonWebAPI/releases/tag/v1.0.0</changelog>
+  <version>1.0.0.4</version>
+  <url>https://github.com/dansleboby/CanonWebAPI/releases/download/v1.0.0.4/CanonWebAPI-v1.0.0.4.zip</url>
+  <changelog>https://github.com/dansleboby/CanonWebAPI/releases/tag/v1.0.0.4</changelog>
   <mandatory>false</mandatory>
 </item>
