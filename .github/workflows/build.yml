@@ -1,25 +1,23 @@
-name: Build Canon.API
+name: Release CanonWebAPI
 
 on:
   push:
-    branches: [ main, develop ]
     tags:
       - 'v*'
-  pull_request:
-    branches: [ main ]
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -27,7 +25,6 @@ jobs:
         dotnet-version: '9.0.x'
         
     - name: Extract version from tag
-      if: startsWith(github.ref, 'refs/tags/v')
       id: version
       run: |
         $tagName = "${{ github.ref }}" -replace 'refs/tags/v', ''
@@ -35,41 +32,55 @@ jobs:
         echo "Tag version: $tagName"
       shell: powershell
         
-    - name: Update Assembly Version
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Check and update project version
+      id: version_check
       run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
+        $tagVersion = "${{ steps.version.outputs.VERSION }}"
         
-        # Update Canon.API AssemblyInfo
-        $apiAssemblyInfo = "Canon.API/Properties/AssemblyInfo.cs"
-        if (Test-Path $apiAssemblyInfo) {
-          (Get-Content $apiAssemblyInfo) -replace 'AssemblyVersion\(".*"\)', "AssemblyVersion(""$version"")" -replace 'AssemblyFileVersion\(".*"\)', "AssemblyFileVersion(""$version"")" | Set-Content $apiAssemblyInfo
-        }
+        # Read current version from project file
+        $projectFile = "Canon.API/Canon.API.csproj"
+        $projectContent = Get-Content $projectFile
+        $currentVersion = ""
         
-        # Update Canon.Core AssemblyInfo
-        $coreAssemblyInfo = "Canon.Core/Properties/AssemblyInfo.cs"
-        if (Test-Path $coreAssemblyInfo) {
-          (Get-Content $coreAssemblyInfo) -replace 'AssemblyVersion\(".*"\)', "AssemblyVersion(""$version"")" -replace 'AssemblyFileVersion\(".*"\)', "AssemblyFileVersion(""$version"")" | Set-Content $coreAssemblyInfo
-        }
-        
-        # Update project files if they contain version
-        Get-ChildItem -Recurse -Name "*.csproj" | ForEach-Object {
-          $content = Get-Content $_
-          if ($content -match "<Version>") {
-            $content -replace "<Version>.*</Version>", "<Version>$version</Version>" | Set-Content $_
+        foreach ($line in $projectContent) {
+          if ($line -match '<Version>(.*)</Version>') {
+            $currentVersion = $matches[1]
+            break
           }
         }
         
-        # Commit assembly version changes
+        echo "Current project version: $currentVersion"
+        echo "Tag version: $tagVersion"
+        
+        if ($currentVersion -ne $tagVersion) {
+          echo "VERSION_MISMATCH=true" >> $env:GITHUB_OUTPUT
+          echo "Versions do not match - updating project files"
+          
+          # Update Canon.API project file
+          $projectContent -replace '<Version>.*</Version>', "<Version>$tagVersion</Version>" -replace '<AssemblyVersion>.*</AssemblyVersion>', "<AssemblyVersion>$tagVersion</AssemblyVersion>" -replace '<FileVersion>.*</FileVersion>', "<FileVersion>$tagVersion</FileVersion>" | Set-Content $projectFile
+          
+          # Update Canon.Core project file if it has version info
+          $coreProjectFile = "Canon.Core/Canon.Core.csproj"
+          if (Test-Path $coreProjectFile) {
+            $coreContent = Get-Content $coreProjectFile
+            if ($coreContent -match '<Version>') {
+              $coreContent -replace '<Version>.*</Version>', "<Version>$tagVersion</Version>" -replace '<AssemblyVersion>.*</AssemblyVersion>', "<AssemblyVersion>$tagVersion</AssemblyVersion>" -replace '<FileVersion>.*</FileVersion>', "<FileVersion>$tagVersion</FileVersion>" | Set-Content $coreProjectFile
+            }
+          }
+        } else {
+          echo "VERSION_MISMATCH=false" >> $env:GITHUB_OUTPUT
+          echo "Versions match - no update needed"
+        }
+      shell: powershell
+        
+    - name: Commit version updates
+      if: steps.version_check.outputs.VERSION_MISMATCH == 'true'
+      run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git fetch origin main
-        git checkout -B main origin/main
-        git add -A
-        if (!(git diff --staged --quiet)) {
-          git commit -m "Update assembly versions to $version"
-          git push origin main
-        }
+        git add "*.csproj"
+        git commit -m "Update project versions to ${{ steps.version.outputs.VERSION }}"
+        git push origin main
       shell: powershell
         
     - name: Restore dependencies
@@ -78,41 +89,24 @@ jobs:
     - name: Build solution
       run: dotnet build CanonSDK.sln --configuration Release --no-restore
       
-    - name: Run tests (if any)
-      run: dotnet test --configuration Release --no-build --verbosity normal
-      continue-on-error: true
-      
     - name: Publish Canon.API
       run: dotnet publish Canon.API --configuration Release --output ./publish --no-build
       
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: canon-api-build
-        path: ./publish/
-        retention-days: 30
-        
-    - name: Create ZIP for release
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Create release package
       run: |
         $version = "${{ steps.version.outputs.VERSION }}"
         Compress-Archive -Path "./publish/*" -DestinationPath "./CanonWebAPI-v$version.zip"
       shell: powershell
         
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          ./CanonWebAPI-v${{ steps.version.outputs.VERSION }}.zip
-        draft: false
-        prerelease: false
+        files: ./CanonWebAPI-v${{ steps.version.outputs.VERSION }}.zip
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Update GitHub Pages XML
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Update AutoUpdater XML
       run: |
         $version = "${{ steps.version.outputs.VERSION }}"
         $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/CanonWebAPI-v$version.zip"
@@ -136,17 +130,12 @@ jobs:
         $xmlContent | Out-File -FilePath "docs/autoupdate.xml" -Encoding UTF8
       shell: powershell
       
-    - name: Commit and push XML changes
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Commit AutoUpdater XML
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git fetch origin main
-        git checkout -B main origin/main
         git add docs/autoupdate.xml
-        if (git diff --staged --quiet) {
-          Write-Host "No changes to commit"
-        } else {
+        if (!(git diff --staged --quiet)) {
           git commit -m "Update AutoUpdater XML for version ${{ steps.version.outputs.VERSION }}"
           git push origin main
         }
