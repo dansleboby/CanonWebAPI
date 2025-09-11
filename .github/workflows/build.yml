@@ -130,11 +130,12 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        git checkout main
         git add docs/autoupdate.xml
         if (git diff --staged --quiet) {
           Write-Host "No changes to commit"
         } else {
           git commit -m "Update AutoUpdater XML for version ${{ steps.version.outputs.VERSION }}"
-          git push
+          git push origin main
         }
       shell: powershell
