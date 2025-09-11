@@ -59,6 +59,17 @@ jobs:
             $content -replace "<Version>.*</Version>", "<Version>$version</Version>" | Set-Content $_
           }
         }
+        
+        # Commit assembly version changes
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git fetch origin main
+        git checkout -B main origin/main
+        git add -A
+        if (!(git diff --staged --quiet)) {
+          git commit -m "Update assembly versions to $version"
+          git push origin main
+        }
       shell: powershell
         
     - name: Restore dependencies
@@ -118,7 +129,7 @@ jobs:
           <version>$version</version>
           <url>$releaseUrl</url>
           <changelog>https://github.com/${{ github.repository }}/releases/tag/v$version</changelog>
-          <mandatory>false</mandatory>
+          <mandatory>true</mandatory>
         </item>
         "@
         
