@@ -95,14 +95,13 @@ jobs:
       
     - name: Create release package
       run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
-        Compress-Archive -Path "./publish/*" -DestinationPath "./CanonWebAPI-v$version.zip"
+        Compress-Archive -Path "./publish/*" -DestinationPath "./CanonWebAPI.zip"
       shell: powershell
-        
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: ./CanonWebAPI-v${{ steps.version.outputs.VERSION }}.zip
+        files: ./CanonWebAPI.zip
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,7 +109,7 @@ jobs:
     - name: Update AutoUpdater XML
       run: |
         $version = "${{ steps.version.outputs.VERSION }}"
-        $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/CanonWebAPI-v$version.zip"
+        $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/CanonWebAPI.zip"
         
         # Create docs folder if it doesn't exist
         if (!(Test-Path "docs")) {
