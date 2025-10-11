@@ -41,7 +41,7 @@ try
     AutoUpdater.RunUpdateAsAdmin = false; // Disable admin requirement
     
     // Set download path to application directory to avoid temp folder permission issues
-    var appDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+    var appDirectory = AppContext.BaseDirectory;
     AutoUpdater.DownloadPath = appDirectory;
     AutoUpdater.InstallationPath = appDirectory;
     
