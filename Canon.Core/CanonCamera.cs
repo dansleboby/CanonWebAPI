@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 
@@ -65,9 +65,50 @@ public class CanonCamera : IDisposable
         {
             lock (_initLock)
                 _initTask = null;
+
+            // If the camera shuts down, fail any pending picture task
+            _takePictureCompletion?.TrySetException(new InvalidOperationException("Camera was disconnected or shut down."));
+        }
+        else if (inEvent == EDSDK.StateEvent_CaptureError)
+        {
+            // Camera failed to take the shot (e.g., focus failure)
+            // This will immediately fail the TakePicture() task with a useful message
+            string errorMsg = GetCaptureErrorMessage(inParameter);
+            _takePictureCompletion?.TrySetException(new Exception(errorMsg)); // Or use your custom EdsException
         }
 
         return 0;
+    }
+    
+    /// <summary>
+    /// Helper method to translate capture error codes into messages.
+    /// Based on EDSDK_API_EN.pdf Page 96
+    /// </summary>
+    private string GetCaptureErrorMessage(uint errorCode)
+    {
+        // --- THIS IS THE FIXED FUNCTION ---
+        // Rewritten to use a classic switch statement for older C# compatibility
+        switch (errorCode)
+        {
+            case 0x00000001:
+                return "Shooting failure (General Error)";
+            case 0x00000002:
+                return "Lens cover was closed";
+            case 0x00000003:
+                return "General shooting error (Bulb or mirror-up)";
+            case 0x00000004:
+                return "Camera is busy cleaning the sensor";
+            case 0x00000005:
+                return "Camera is set to silent operation";
+            case 0x00000006:
+                return "No card inserted";
+            case 0x00000007:
+                return "Card error (Full or other)";
+            case 0x00000008:
+                return "Card write-protected";
+            default:
+                return $"Unknown capture error: 0x{errorCode:X}";
+        }
     }
 
     /// <summary>
@@ -259,11 +300,16 @@ public class CanonCamera : IDisposable
 
             try
             {
+                // Wait for OnCameraObject or OnCameraStateChanged to complete the task
                 return await _takePictureCompletion.Task.WaitAsync(TimeSpan.FromSeconds(10));
             }
             catch (TimeoutException)
             {
-                throw new TimeoutException("The camera didn't produce a JPG image within specified timeout. Check focus and camera settings");
+                // Invalidate the TCS so the late event doesn't complete a *future* request
+                _takePictureCompletion = null; 
+                
+                // We can also add a better message, as you wanted
+                throw new TimeoutException("Picture taking operation timed out. The camera did not respond. Check focus, lens cap, or if it's set to RAW.");
             }
         }
         finally
@@ -279,32 +325,74 @@ public class CanonCamera : IDisposable
     {
         await InitializeAsync();
 
-        return await _thread.InvokeAsync(() =>
+        // Try to acquire the semaphore with a 0ms timeout.
+        if (!await _takePictureSemaphore.WaitAsync(0))
         {
-            var evfImage = nint.Zero;
-            var stream = nint.Zero;
+            // If this fails, TakePicture is busy. Skip this frame.
+            return null;
+        }
 
-            try
+        try
+        {
+            return await _thread.InvokeAsync(() =>
             {
-                EDSDK.EdsCreateMemoryStream(0, out stream).ThrowIfEdSdkError("Could not create memory stream for EVF image");
-                EDSDK.EdsCreateEvfImageRef(stream, out evfImage).ThrowIfEdSdkError("Could not create EVF image reference");
+                var evfImage = nint.Zero;
+                var stream = nint.Zero;
 
-                if (EDSDK.EdsDownloadEvfImage(_cameraRef, evfImage) != EDSDK.EDS_ERR_OK)
-                    return null;
+                try
+                {
+                    // 1. Create Stream
+                    EDSDK.EdsCreateMemoryStream(0, out stream).ThrowIfEdSdkError("Could not create memory stream for EVF image");
+                    if (stream == nint.Zero) throw new EdsException(0, "EdsCreateMemoryStream returned OK but stream was null.", null);
 
-                EDSDK.EdsGetPointer(stream, out var imagePtr).ThrowIfEdSdkError("Could not get stream pointer");
-                EDSDK.EdsGetLength(stream, out var length).ThrowIfEdSdkError("Could not get stream length");
+                    // 2. Create Image Ref
+                    EDSDK.EdsCreateEvfImageRef(stream, out evfImage).ThrowIfEdSdkError("Could not create EVF image reference");
+                    if (evfImage == nint.Zero) throw new EdsException(0, "EdsCreateEvfImageRef returned OK but image ref was null.", null);
+                    
+                    // 3. Download Image
+                    var err = EDSDK.EdsDownloadEvfImage(_cameraRef, evfImage);
+                    if (err == EDSDK.EDS_ERR_OBJECT_NOTREADY)
+                    {
+                        return null; // Not an error, just not ready for a frame
+                    }
+                    err.ThrowIfEdSdkError("Could not download EVF image"); // Throws on other errors
 
-                var bytes = new byte[length];
-                Marshal.Copy(imagePtr, bytes, 0, (int)length);
-                return bytes;
-            }
-            finally
-            {
-                if (stream != nint.Zero) EDSDK.EdsRelease(stream);
-                if (evfImage != nint.Zero) EDSDK.EdsRelease(evfImage);
-            }
-        });
+                    // 4. Get Pointer (Defensive Check 1)
+                    // This is the area where the NullReferenceException was happening
+                    var ptrErr = EDSDK.EdsGetPointer(stream, out var imagePtr);
+                    if (ptrErr != EDSDK.EDS_ERR_OK || imagePtr == nint.Zero)
+                    {
+                        // Camera said download was OK, but the stream pointer is bad.
+                        // This happens when the camera is in a bad state. Skip the frame.
+                        return null; 
+                    }
+
+                    // 5. Get Length (Defensive Check 2)
+                    var lenErr = EDSDK.EdsGetLength(stream, out var length);
+                    if (lenErr != EDSDK.EDS_ERR_OK || length == 0)
+                    {
+                        // Stream is bad or empty, skip frame
+                        return null;
+                    }
+
+                    // 6. Copy bytes
+                    var bytes = new byte[length];
+                    Marshal.Copy(imagePtr, bytes, 0, (int)length);
+                    return bytes;
+                }
+                finally
+                {
+                    // This release code is correct and essential
+                    if (stream != nint.Zero) EDSDK.EdsRelease(stream);
+                    if (evfImage != nint.Zero) EDSDK.EdsRelease(evfImage);
+                }
+            });
+        }
+        finally
+        {
+            // Always release the semaphore so the next operation can run
+            _takePictureSemaphore.Release();
+        }
     }
 
     /// <summary>
@@ -312,14 +400,20 @@ public class CanonCamera : IDisposable
     /// </summary>
     private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
     {
+        // This event is triggered when an image is ready to be downloaded
         if (inEvent == EDSDK.ObjectEvent_DirItemRequestTransfer)
         {
             try
             {
                 EDSDK.EdsGetDirectoryItemInfo(inRef, out var dirItemInfo).ThrowIfEdSdkError("Failed to get file info");
 
+                // We only care about JPGs for the TakePicture preview
                 if (Path.GetExtension(dirItemInfo.szFileName).ToLower() is not (".jpg" or ".jpeg"))
+                {
+                    // This wasn't the image we wanted, just complete the download and ignore
+                    EDSDK.EdsDownloadComplete(inRef).ThrowIfEdSdkError("Failed to complete non-JPG download");
                     return 0;
+                }
 
                 var tempFileName = $"{Path.GetTempFileName()}.jpg";
                 EDSDK.EdsCreateFileStream(tempFileName, EDSDK.EdsFileCreateDisposition.CreateAlways, EDSDK.EdsAccess.ReadWrite, out var stream).ThrowIfEdSdkError("Failed to create download stream");
@@ -349,22 +443,32 @@ public class CanonCamera : IDisposable
                     }
  
                     _latestImageBytes = bytes;
-                    _takePictureCompletion?.SetResult(bytes);
+                    
+                    // Use TrySetResult for race-condition safety
+                    _takePictureCompletion?.TrySetResult(bytes);
                 }
                 catch (Exception exception)
                 {
-                    _takePictureCompletion?.SetException(exception);
+                    _takePictureCompletion?.TrySetException(exception);
+                }
+                finally
+                {
+                    // Clear the TCS now that this transfer is handled (success or fail)
+                    _takePictureCompletion = null;
                 }
             }
             finally
             {
-                EDSDK.EdsRelease(inRef);
-                _takePictureCompletion = null;
+                // Always release the event reference
+                if (inRef != nint.Zero) 
+                    EDSDK.EdsRelease(inRef);
             }
         }
-
         else if (inRef != nint.Zero) 
+        {
+            // Release other events we don't care about
             EDSDK.EdsRelease(inRef);
+        }
 
         return 0;
     }
