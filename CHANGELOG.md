@@ -7,19 +7,20 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
-### Changed
-- The release workflow refuses to run when the tag does not point to the latest commit of `main`,
-  so the published package always matches the tag.
+## [1.2.0.0] - 2026-09-30
 
+### Changed
 - **Migrated from .NET 9 to .NET 10 (LTS)**, supported until November 2028 (.NET 9 support ends in November 2026).
   The release is still a self-contained executable: nothing to install on the photo booth computers.
 - Packages updated (ASP.NET Core OpenAPI 10, Serilog.AspNetCore 10, Swagger UI 10, AutoUpdater.NET 1.9.3).
 - The OpenAPI document is now OpenAPI 3.1 (was 3.0), without duplicated schemas.
+- The release workflow refuses to run when the tag does not point to the latest commit of `main`,
+  so the published package always matches the tag.
 
 ### Added
 - CI workflow building the solution and running the unit tests on every pull request and push to `main`.
 
-## [1.1.0.0] - Unreleased
+## [1.1.0.0] - 2026-09-30
 
 ### Changed
 - **Canon EDSDK updated from 13.19.0 to 13.20.21** (64-bit). Adds support for the EOS R6 Mark III and EOS R6V.
@@ -150,7 +151,8 @@ First release.
 - Automatic updates with AutoUpdater.NET, from GitHub releases.
 - CI/CD workflow building the release package.
 
-[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...HEAD
+[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.2.0.0...HEAD
+[1.2.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...v1.2.0.0
 [1.1.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.11...v1.1.0.0
 [1.0.0.11]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.10...v1.0.0.11
 [1.0.0.10]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.9...v1.0.0.10
