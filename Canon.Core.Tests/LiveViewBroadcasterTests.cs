@@ -122,6 +122,23 @@ public class LiveViewBroadcasterTests
     }
 
     [Fact]
+    public async Task Live_view_is_stopped_even_when_the_last_frames_failed()
+    {
+        var camera = new FakeCamera();
+        await using var broadcaster = Create(camera);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await Read(broadcaster, 2, timeout.Token);
+        camera.FailuresToSimulate = int.MaxValue;
+
+        while (broadcaster.IsRunning && !timeout.IsCancellationRequested)
+            await Task.Delay(10);
+
+        Assert.False(broadcaster.IsRunning);
+        Assert.Equal(1, camera.Stops);
+    }
+
+    [Fact]
     public async Task Dispose_ends_client_streams_and_stops_the_live_view()
     {
         var camera = new FakeCamera();

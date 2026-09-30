@@ -43,6 +43,11 @@ public sealed class CanonCamera : IDisposable
     private volatile PendingCapture? _pendingCapture;
     private volatile CapturedImage? _latestImage;
 
+    // kEdsStateEvent_JobStatusChanged: the camera still has files to transfer.
+    private volatile bool _transferJobPending;
+    // Set when a capture timed out: files arriving until the camera is idle belong to that capture, not the next one.
+    private volatile bool _staleTransfers;
+
     private readonly Lock _connectLock = new();
     private Task? _connectTask;
     private readonly SemaphoreSlim _shutterLock = new(1, 1);
@@ -212,9 +217,14 @@ public sealed class CanonCamera : IDisposable
     /// <summary>
     /// Closes the session and releases the camera. Runs on the Canon thread.
     /// </summary>
-    private void DisconnectCore(string reason)
+    private void DisconnectCore(string reason, nint expectedCamera = 0)
     {
         var camera = _cameraRef;
+
+        // The session that failed may already have been replaced by a new one: keep the new one.
+        if (expectedCamera != nint.Zero && camera != expectedCamera)
+            return;
+
         _connected = false;
         _liveViewActive = false;
 
@@ -273,20 +283,23 @@ public sealed class CanonCamera : IDisposable
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await ConnectAsync();
 
+        var usedCamera = nint.Zero;
+
         try
         {
             return await _thread.InvokeAsync(() =>
             {
-                if (_cameraRef == nint.Zero)
+                usedCamera = _cameraRef;
+                if (usedCamera == nint.Zero)
                     throw new CameraNotConnectedException("Camera is not connected");
 
-                return func(_cameraRef);
+                return func(usedCamera);
             });
         }
-        catch (EdsException e) when (e.IsDisconnected && e is not CameraNotConnectedException)
+        catch (EdsException e) when (e.IsDisconnected && e is not CameraNotConnectedException && usedCamera != nint.Zero)
         {
             // The session is no longer usable: drop it so the next call reconnects.
-            await _thread.InvokeAsync(() => DisconnectCore(e.Message));
+            await _thread.InvokeAsync(() => DisconnectCore(e.Message, usedCamera));
             throw;
         }
     }
@@ -381,6 +394,12 @@ public sealed class CanonCamera : IDisposable
                 }
                 break;
 
+            case EDSDK.StateEvent_JobStatusChanged:
+                _transferJobPending = inParameter != 0;
+                if (!_transferJobPending)
+                    _staleTransfers = false;
+                break;
+
             case EDSDK.StateEvent_CaptureError:
                 // The camera failed to take the shot (e.g. focus failure).
                 _pendingCapture?.Completion.TrySetException(new CaptureFailedException(inParameter));
@@ -431,7 +450,8 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private void TransferFile(nint dirItem)
     {
-        var pending = _pendingCapture;
+        // A late file of a timed out capture must not answer the next capture.
+        var pending = _staleTransfers ? null : _pendingCapture;
 
         try
         {
@@ -645,14 +665,40 @@ public sealed class CanonCamera : IDisposable
             }
             finally
             {
-                await RunAsync(camera =>
-                    EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF)
-                        .ThrowIfEdSdkError("Could not release the shutter button"));
+                await ReleaseShutterButtonAsync();
             }
         }
         finally
         {
             _shutterLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Releases the shutter button, retrying while the camera is busy. Never throws: a failure is logged.
+    /// </summary>
+    private async Task ReleaseShutterButtonAsync()
+    {
+        var attempts = Math.Max(5, _options.BusyRetryCount);
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                await RunAsync(camera =>
+                    EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF)
+                        .ThrowIfEdSdkError("Could not release the shutter button"));
+                return;
+            }
+            catch (EdsException e) when (e.IsBusy && attempt < attempts)
+            {
+                await Task.Delay(_options.BusyRetryDelayMilliseconds);
+            }
+            catch (Exception e)
+            {
+                _logger?.LogError(e, "Could not release the shutter button");
+                return;
+            }
         }
     }
 
@@ -679,6 +725,8 @@ public sealed class CanonCamera : IDisposable
 
         try
         {
+            await WaitForPendingTransfersAsync(cancellationToken);
+
             var timeout = await GetCaptureTimeout();
             var pending = new PendingCapture(acceptedTypes);
             _pendingCapture = pending;
@@ -691,19 +739,24 @@ public sealed class CanonCamera : IDisposable
                     : EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely_NonAF;
 
                 // Press then release the shutter button (EDSDK API reference, sample 9).
-                await RunWithBusyRetryAsync(camera =>
+                // Only the press is retried while the camera is busy: once it succeeded it is never sent again,
+                // and the button is always released, even when the press failed.
+                try
                 {
-                    var pressError = EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button);
-                    var releaseError = EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF);
-
-                    pressError.ThrowIfEdSdkError("Could not press the shutter button");
-                    releaseError.ThrowIfEdSdkError("Could not release the shutter button");
-                }, cancellationToken);
+                    await RunWithBusyRetryAsync(camera =>
+                        EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button)
+                            .ThrowIfEdSdkError("Could not press the shutter button"), cancellationToken);
+                }
+                finally
+                {
+                    await ReleaseShutterButtonAsync();
+                }
 
                 return await pending.Completion.Task.WaitAsync(timeout, cancellationToken);
             }
             catch (TimeoutException)
             {
+                _staleTransfers = true;
                 throw new TimeoutException(
                     $"The camera did not deliver a picture within {timeout.TotalSeconds:0.#} s. " +
                     $"Check the focus and that the image quality set on the camera produces one of these file types: {string.Join(", ", acceptedTypes)}.");
@@ -718,6 +771,21 @@ public sealed class CanonCamera : IDisposable
         {
             _shutterLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Waits (a few seconds at most) until the camera has transferred the files of previous shots,
+    /// so they cannot be taken for the file of the next capture.
+    /// </summary>
+    private async Task WaitForPendingTransfersAsync(CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+
+        while ((_transferJobPending || _staleTransfers) && DateTime.UtcNow < deadline)
+            await Task.Delay(50, cancellationToken);
+
+        // The camera may not report its job status: do not block the next captures forever.
+        _staleTransfers = false;
     }
 
     /// <summary>
@@ -891,7 +959,7 @@ public sealed class CanonCamera : IDisposable
             _logger?.LogWarning(e, "Error while closing the camera session");
         }
 
+        // _shutterLock is not disposed: an operation still in flight releases it in its finally block.
         _thread.Dispose();
-        _shutterLock.Dispose();
     }
 }

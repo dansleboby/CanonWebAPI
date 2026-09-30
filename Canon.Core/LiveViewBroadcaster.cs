@@ -125,7 +125,10 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
     private async Task ProduceAsync()
     {
         var token = _disposed.Token;
+        // started: the live view was started on the camera and must be stopped when the producer exits.
+        // needsStart: the live view must be (re)started before the next frame, e.g. after an error.
         var started = false;
+        var needsStart = true;
         var interval = TimeSpan.FromMilliseconds(Math.Max(1, _options.FrameIntervalMilliseconds));
         var idleDelay = TimeSpan.FromMilliseconds(Math.Max(0, _options.IdleStopDelayMilliseconds));
         var errorDelay = TimeSpan.FromMilliseconds(Math.Max(1, _options.ErrorRetryDelayMilliseconds));
@@ -158,6 +161,7 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
                         if (started)
                         {
                             started = false;
+                            needsStart = true;
                             await StopSafelyAsync();
                         }
 
@@ -181,10 +185,11 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
 
                 idleSince = null;
 
-                if (!started)
+                if (needsStart)
                 {
-                    await _start();
                     started = true;
+                    await _start();
+                    needsStart = false;
                     _logger?.LogInformation("Live view broadcast started");
                 }
 
@@ -205,7 +210,8 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
             catch (Exception e)
             {
                 _logger?.LogWarning("Live view error, retrying in {Delay} ms: {Message}", errorDelay.TotalMilliseconds, e.Message);
-                started = false;
+                // Keep "started": the live view is still stopped when the last client leaves.
+                needsStart = true;
                 _latestFrame = null;
 
                 try

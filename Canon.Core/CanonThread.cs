@@ -188,10 +188,11 @@ internal sealed class CanonThread : IDisposable
         _queue.CompleteAdding();
         _cancellation.Cancel();
 
-        if (!IsCurrentThread)
-            _thread.Join();
+        // A camera that stopped answering can block an SDK call: do not block the caller forever
+        // (the thread is a background thread and will not keep the process alive).
+        if (!IsCurrentThread && !_thread.Join(TimeSpan.FromSeconds(10)))
+            _logger?.LogWarning("The Canon thread did not stop in time");
 
-        _cancellation.Dispose();
         _logger?.LogInformation("Canon thread stopped");
     }
 }
