@@ -4,9 +4,9 @@
 
 A web API for remotely controlling Canon DSLR and mirrorless cameras. This project utilizes the Canon EDSDK to communicate with the camera and includes automatic update capabilities.
 
-**Current version: 1.1.0.0** (Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
+**Current version: 1.2.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
 
-> **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---unreleased).
+> **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---2026-09-30).
 
 ## Features
 
@@ -150,7 +150,7 @@ dotnet run --project Canon.API
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.1.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
+2. **Tag-based releases**: Push a tag like `v1.2.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
 4. **Unit tests**: The workflow runs `Canon.Core.Tests` before packaging
 5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML
