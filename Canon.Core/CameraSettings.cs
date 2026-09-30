@@ -80,8 +80,9 @@ public static class CameraSettingRules
     /// <summary>
     /// Settings that can be changed in each creative zone mode. In the other (basic zone) modes, the camera sets
     /// capture-related properties by itself and none can be changed (EDSDK API reference, kEdsPropID_AEModeSelect).
-    /// The settable value lists returned by EdsGetPropertyDesc do not say whether a setting is locked by the mode
-    /// (its "form" and "access" fields are reserved, always 0), hence this table.
+    /// EdsGetPropertyDesc does not say whether a setting is locked by the mode (its "form" and "access" fields are
+    /// reserved, always 0, EDSDK 13.20 API reference 3.1.20) nor what it lists in that case, hence this table.
+    /// Exposure compensation is not available in manual exposure mode (EDSDK API reference 5.2.28).
     /// </summary>
     private static readonly Dictionary<uint, CameraProperty[]> SettableByMode = new()
     {
@@ -102,14 +103,23 @@ public static class CameraSettingRules
         SettableByMode.TryGetValue(aeMode, out var properties) && properties.Contains(property);
 
     /// <summary>
+    /// True when <paramref name="property"/> can be changed now: allowed by the AE mode, and the camera lists at least
+    /// one settable value. An empty list (EdsGetPropertyDesc succeeded with no element) means the setting cannot be
+    /// changed in the current state (movie mode, no lens...): the Canon samples disable the setting in that case,
+    /// and the EDSDK API reference asks to set only values from that list. Null means the camera does not list the values.
+    /// </summary>
+    public static bool IsSettable(CameraProperty property, uint aeMode, IReadOnlyCollection<uint>? settableValues) =>
+        IsSettableInMode(property, aeMode) && settableValues is not { Count: 0 };
+
+    /// <summary>
     /// Checks a requested value before it is written to the camera.
     /// </summary>
     /// <param name="property">The setting.</param>
     /// <param name="requested">The label (e.g. "1/125", "5.6", "Auto") or raw value ("0x93").</param>
     /// <param name="aeMode">Current kEdsPropID_AEMode value.</param>
     /// <param name="settableValues">
-    /// Values the camera accepts now (EdsGetPropertyDesc); null or empty when the camera does not list them,
-    /// in which case only the label and the mode are checked.
+    /// Values the camera accepts now (EdsGetPropertyDesc). Null when the camera does not list them: only the label and
+    /// the mode are checked. Empty: the setting cannot be changed now (see <see cref="IsSettable"/>).
     /// </param>
     /// <param name="value">The raw value to write, when valid.</param>
     /// <returns>Null when the value can be written, otherwise why it cannot.</returns>
@@ -131,8 +141,14 @@ public static class CameraSettingRules
                 $"{property.ToSettingName()} cannot be changed in the current shooting mode ({DescribeAEMode(aeMode)}).");
         }
 
-        var listed = settableValues is { Count: > 0 };
-        if ((listed && !settableValues!.Contains(value)) || (property == CameraProperty.ShutterSpeed && value == TvBulb))
+        if (settableValues is { Count: 0 })
+        {
+            return new SettingError(property, requested, SettingErrorReason.NotSettableInMode, [],
+                $"{property.ToSettingName()} cannot be changed now: the camera lists no settable value in its current state " +
+                $"({DescribeAEMode(aeMode)}; movie mode, lens...).");
+        }
+
+        if ((settableValues != null && !settableValues.Contains(value)) || (property == CameraProperty.ShutterSpeed && value == TvBulb))
         {
             return new SettingError(property, requested, SettingErrorReason.ValueNotAccepted, accepted,
                 $"The camera does not accept {property.ToSettingName()} '{propId.DescribeValue(value)}' now."

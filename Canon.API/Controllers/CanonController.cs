@@ -101,12 +101,12 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     private const string SetterErrors =
         "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now " +
-        "(\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). " +
+        "(\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode or the camera accepts no value now (\"not-settable-in-mode\"). " +
         "The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.";
 
     [HttpGet("settings")]
     [EndpointSummary("Shooting mode, ISO, aperture, shutter speed and white balance in one call")]
-    [EndpointDescription("For each setting: current value, values the camera accepts now, and whether it can be changed in the current shooting mode (settable).")]
+    [EndpointDescription("For each setting: current value, values the camera accepts now, and whether it can be changed now (settable: allowed by the shooting mode and at least one value accepted by the camera).")]
     [ProducesResponseType<CameraSettings>(StatusCodes.Status200OK, "application/json")]
     public async Task<IActionResult> GetSettings() => Ok(await camera.GetSettingsAsync());
 

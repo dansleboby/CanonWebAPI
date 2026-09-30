@@ -120,7 +120,7 @@ The project uses GitHub Actions for automated releases (record every change in t
 - Live view is started with `Evf_OutputDevice` and stopped when no client uses it
 - "Device busy" answers are retried after ~500 ms, as in the Canon samples; only the shutter press is retried, the release is always sent
 - Flash (`EdsCreateFlashSettingRef`, `Flash_Target`, `Flash_Firing`): the UI must be locked while setting it; the SDK only reports values set remotely, so the setting is forced before each capture (studio flash on the shoe in the photo booth)
-- Settings: `CameraSettingRules` (pure, tested) decides what is settable per AE mode; EdsGetPropertyDesc only gives the accepted values (its `form`/`access` fields are reserved, always 0)
+- Settings: `CameraSettingRules` (pure, tested) decides what is settable per AE mode; EdsGetPropertyDesc gives the accepted values (its `form`/`access` fields are reserved, always 0); an empty list means not settable now (as in the Canon samples). Set only values from that list (API reference 3.1.20)
 - Memory management critical due to unmanaged EDSDK resources: release every ref (`EdsRelease`)
 
 ## Testing

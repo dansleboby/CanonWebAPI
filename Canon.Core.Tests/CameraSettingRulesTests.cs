@@ -70,12 +70,35 @@ public class CameraSettingRulesTests
         Assert.Equal(SettingErrorReason.ValueNotAccepted, Validate(CameraProperty.Aperture, "0x48", Manual, Apertures)?.Reason);
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData(new uint[0])]
-    public void Without_a_settable_list_only_the_label_and_the_mode_are_checked(uint[]? settable)
+    [Fact]
+    public void Without_a_settable_list_only_the_label_and_the_mode_are_checked()
     {
-        Assert.Null(Validate(CameraProperty.WhiteBalance, "Daylight", Manual, settable));
+        Assert.Null(Validate(CameraProperty.WhiteBalance, "Daylight", Manual, null));
+        Assert.True(CameraSettingRules.IsSettable(CameraProperty.WhiteBalance, Manual, null));
+    }
+
+    [Fact]
+    public void Empty_settable_list_means_the_setting_cannot_be_changed_now()
+    {
+        // The Canon samples disable a setting whose list is empty (e.g. aperture without a lens, movie mode).
+        var error = Validate(CameraProperty.Aperture, "5.6", Manual, []);
+
+        Assert.Equal(SettingErrorReason.NotSettableInMode, error?.Reason);
+        Assert.Empty(error!.AcceptedValues);
+        Assert.False(CameraSettingRules.IsSettable(CameraProperty.Aperture, Manual, []));
+        Assert.True(CameraSettingRules.IsSettable(CameraProperty.Aperture, Manual, Apertures));
+        Assert.False(CameraSettingRules.IsSettable(CameraProperty.Aperture, Tv, Apertures));
+    }
+
+    [Fact]
+    public void Not_valid_value_has_a_label_but_cannot_be_sent_back()
+    {
+        // Exposure compensation read in manual exposure mode (EDSDK API reference 5.2.28).
+        var propId = (uint)CameraProperty.ExposureCompensation;
+
+        Assert.Equal("Not valid", propId.DescribeValue(0xFFFFFFFF));
+        Assert.Equal("0xFFFFFFFF", ((uint)CameraProperty.WhiteBalance).DescribeValue(0xFFFFFFFF));
+        Assert.Equal(SettingErrorReason.InvalidValue, Validate(CameraProperty.ExposureCompensation, "Not valid", Av)?.Reason);
     }
 
     [Fact]

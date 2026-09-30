@@ -68,7 +68,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/flash`                     | Gets the "flash firing" setting as last set by the API (a change made in the camera menu is not reported by the SDK). | N/A |
 | POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. | `"fire"` or `"off"` |
-| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: can be changed in the current shooting mode). | N/A |
+| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: allowed by the shooting mode and the camera accepts at least one value now). | N/A |
 | POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged. | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "whiteBalance": "Daylight" }` |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
 | POST   | `/iso`                       | Sets the ISO speed.                                     | `"100"`                |
@@ -87,6 +87,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | POST   | `/autofocus`                 | Triggers the camera's autofocus mechanism.              | N/A                    |
 
 Values the camera does not know a label for are returned as raw hexadecimal values (e.g. `"0x99"`), which can also be sent back.
+A setting that is not valid in the current state (e.g. exposure compensation in M) reads `"Not valid"`.
 
 ### Errors
 
@@ -109,14 +110,15 @@ and answer with the same machine readable problem details:
 |--------|----------|---------|
 | 400    | `invalid-value` | The label cannot be read (e.g. `"1/7"`, `"f/5.6"`). |
 | 400    | `value-not-accepted` | The camera does not accept this value now (lens, exposure step...). |
-| 409    | `not-settable-in-mode` | The setting cannot be changed in the current shooting mode. |
+| 409    | `not-settable-in-mode` | The setting cannot be changed in the current shooting mode, or the camera accepts no value for it now (empty list: movie mode, no lens...). |
 
 Extensions: `reason`, `property` (`iso`, `aperture`, `shutterSpeed`, `exposureCompensation`, `whiteBalance`), `acceptedValues`,
 `aeMode`, `aeModeCode`, and `errors`: every refused setting (`property`, `value`, `reason`, `acceptedValues`, `detail`).
 With `POST /settings`, nothing is written when a value is refused; when several are, the status is 409 if one of them
 cannot be changed in the current mode (the top level fields then describe that one), 400 otherwise.
 
-Settings that can be changed in each mode (other modes: none, the camera chooses by itself):
+Settings that can be changed in each mode (other modes: none, the camera chooses by itself). The EDSDK does not report
+it (the `form`/`access` fields of `EdsGetPropertyDesc` are reserved), hence this table:
 
 | Mode | ISO | Aperture | Shutter speed | Exposure compensation | White balance |
 |------|-----|----------|---------------|-----------------------|---------------|

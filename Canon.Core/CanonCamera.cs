@@ -627,8 +627,9 @@ public sealed class CanonCamera : IDisposable
         CameraSettingState Read(CameraProperty property)
         {
             EDSDK.EdsGetPropertyData(camera, (uint)property, 0, out uint value).ThrowIfEdSdkError($"Could not get {property}");
-            var supported = (GetSettableValues(camera, property) ?? []).Select(v => ((uint)property).DescribeValue(v)).ToList();
-            return new CameraSettingState(((uint)property).DescribeValue(value), supported, CameraSettingRules.IsSettableInMode(property, mode.AEModeCode));
+            var settable = GetSettableValues(camera, property);
+            var supported = (settable ?? []).Select(v => ((uint)property).DescribeValue(v)).ToList();
+            return new CameraSettingState(((uint)property).DescribeValue(value), supported, CameraSettingRules.IsSettable(property, mode.AEModeCode, settable));
         }
 
         return new CameraSettings(mode, Read(CameraProperty.ISOSpeed), Read(CameraProperty.Aperture), Read(CameraProperty.ShutterSpeed), Read(CameraProperty.WhiteBalance));

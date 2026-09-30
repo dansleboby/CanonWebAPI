@@ -543,10 +543,26 @@ internal static class EdsdkHelper
             : throw new ArgumentOutOfRangeException(nameof(propId), $"Unsupported property 0x{propId:X}");
 
     /// <summary>
+    /// Value returned for ISO, Av, Tv and exposure compensation when the setting is not valid in the current state
+    /// (e.g. exposure compensation in manual exposure mode): "Not valid/no settings changes" (EDSDK API reference 5.2.22 to 5.2.28).
+    /// It is only a label for reading: it cannot be sent back.
+    /// </summary>
+    public const uint NotValidValue = 0xFFFFFFFF;
+
+    public const string NotValidLabel = "Not valid";
+
+    /// <summary>
     /// Returns the human readable label of a property value, or the raw value (e.g. "0x93") when the value is unknown.
     /// </summary>
-    public static string DescribeValue(this uint propId, uint value) =>
-        propId.GetPropertyValues().TryGetValue(value, out var description) ? description : FormatRawValue(value);
+    public static string DescribeValue(this uint propId, uint value)
+    {
+        if (propId.GetPropertyValues().TryGetValue(value, out var description))
+            return description;
+
+        return value == NotValidValue && propId is EDSDK.PropID_ISOSpeed or EDSDK.PropID_Av or EDSDK.PropID_Tv or EDSDK.PropID_ExposureCompensation
+            ? NotValidLabel
+            : FormatRawValue(value);
+    }
 
     public static string FormatRawValue(uint value) => $"0x{value:X}";
 

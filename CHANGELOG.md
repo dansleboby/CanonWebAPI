@@ -21,6 +21,10 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - Setting errors are machine readable: `reason` (`invalid-value`, `value-not-accepted`, `not-settable-in-mode`), `property`,
   `acceptedValues`, `aeMode`, `aeModeCode` and `errors` in the problem details (the accepted values used to be only in the message).
 - Setting a value waits for a capture or an autofocus in progress to finish.
+- A setting for which the camera lists no settable value (movie mode, no lens...) is refused with 409 `not-settable-in-mode`,
+  as the Canon samples disable it; the EDSDK 13.20 API reference asks to set only values from that list.
+- ISO, aperture, shutter speed and exposure compensation read `"Not valid"` instead of `"0xFFFFFFFF"` when the setting is not
+  valid in the current state (e.g. exposure compensation in M).
 - `GET /whitebalance` returns an empty `supportedValues` instead of failing when the camera does not list the white balance values.
 
 ## [1.2.0.0] - 2026-09-30
