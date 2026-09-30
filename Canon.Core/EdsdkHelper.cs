@@ -152,9 +152,29 @@ internal static class EdsdkHelper
         { EDSDK.EDS_ERR_TAKE_PICTURE_SILENCE_NG, "Currently performing silent operations" },
         { EDSDK.EDS_ERR_TAKE_PICTURE_NO_CARD_NG, "Card not installed" },
         { EDSDK.EDS_ERR_TAKE_PICTURE_CARD_NG, "Error writing to card" },
-        { EDSDK.EDS_ERR_TAKE_PICTURE_CARD_PROTECT_NG, "Card is write protected" }
+        { EDSDK.EDS_ERR_TAKE_PICTURE_CARD_PROTECT_NG, "Card is write protected" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_MOVIE_CROP_NG, "Failed in processing with movie crop" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_STROBO_CHARGE_NG, "Flash is charging" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_NO_LENS_NG, "Lens is not attached" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG, "Movie camera exceeds the limit" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_LV_REL_PROHIBIT_MODE_NG, "Live view is not ready to take a picture in this shooting mode" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_MOVIE_MODE_NG, "Cannot take a still image while the camera is in movie mode" },
+        { EDSDK.EDS_ERR_TAKE_PICTURE_RETRUCTED_LENS_NG, "Lens is retracted" },
+
+        // Errors added in recent EDSDK versions
+        { EDSDK.EDS_ERR_PTP_DEVICE_BUSY, "Device is busy" },
+        { EDSDK.EDS_ERR_NOT_CAMERA_SUPPORT_SDK_VERSION, "Camera is not supported by this EDSDK version" },
+        { EDSDK.EDS_ERR_CANNOT_MAKE_OBJECT, "Cannot make object" },
+        { EDSDK.EDS_ERR_MEMORYSTATUS_NOTREADY, "Memory status not ready" }
     };
 
+    public static string GetErrorMessage(uint errorCode) =>
+        ErrorMessages.TryGetValue(errorCode, out var message) ? message : $"EDSDK error 0x{errorCode:X8}";
+
+    /// <summary>
+    /// Values of kEdsPropID_Av (EDSDK API reference 5.2.25).
+    /// "(1/3)" labels are the values used when the exposure step is set to 1/3 in the custom functions.
+    /// </summary>
     private static readonly Dictionary<uint, string> AvValues = new()
     {
         { 0x08, "1" },
@@ -171,6 +191,7 @@ internal static class EdsdkHelper
         { 0x1D, "2.5 (1/3)" },
         { 0x20, "2.8" },
         { 0x23, "3.2" },
+        { 0x85, "3.4" },
         { 0x24, "3.5" },
         { 0x25, "3.5 (1/3)" },
         { 0x28, "4" },
@@ -212,6 +233,10 @@ internal static class EdsdkHelper
         { 0x70, "91" }
     };
 
+    /// <summary>
+    /// Values of kEdsPropID_Tv (EDSDK API reference 5.2.26).
+    /// Bulb cannot be set from a computer; it is only listed so the current value can be displayed.
+    /// </summary>
     private static readonly Dictionary<uint, string> TvValues = new()
     {
         { 0x0C, "BULB" },
@@ -287,9 +312,18 @@ internal static class EdsdkHelper
         { 0x9B, "1/5000" },
         { 0x9C, "1/6000" },
         { 0x9D, "1/6400" },
-        { 0xA0, "1/8000" }
+        { 0xA0, "1/8000" },
+        { 0xA3, "1/10000" },
+        { 0xA5, "1/12800" },
+        { 0xA8, "1/16000" },
+        { 0xAB, "1/20000" },
+        { 0xAD, "1/25600" },
+        { 0xB0, "1/32000" }
     };
 
+    /// <summary>
+    /// Values of kEdsPropID_ISOSpeed (EDSDK API reference 5.2.22).
+    /// </summary>
     private static readonly Dictionary<uint, string> ISOValues = new()
     {
         { 0x00, "Auto" },
@@ -325,9 +359,17 @@ internal static class EdsdkHelper
         { 0x8B, "32000" },
         { 0x8D, "40000" },
         { 0x90, "51200" },
-        { 0x98, "102400" }
+        { 0x93, "64000" },
+        { 0x95, "80000" },
+        { 0x98, "102400" },
+        { 0xA0, "204800" },
+        { 0xA8, "409600" },
+        { 0xB0, "819200" }
     };
 
+    /// <summary>
+    /// Values of kEdsPropID_WhiteBalance (EDSDK API reference 5.2.35).
+    /// </summary>
     private static readonly Dictionary<uint, string> WhiteBalanceValues = new()
     {
         { 0, "Auto" },
@@ -343,59 +385,234 @@ internal static class EdsdkHelper
         { 11, "Custom 2" },
         { 12, "Custom 3" },
         { 15, "Manual 2" },
-        { 16, "Manual 3" }
+        { 16, "Manual 3" },
+        { 18, "Manual 4" },
+        { 19, "Manual 5" },
+        { 20, "Custom 4" },
+        { 21, "Custom 5" },
+        { 23, "Auto (White priority)" },
+        { 24, "Color Temp 2" },
+        { 25, "Color Temp 3" },
+        { 26, "Color Temp 4" }
     };
 
+    /// <summary>
+    /// Values of kEdsPropID_ExposureCompensation (EDSDK API reference 5.2.28).
+    /// Not available in manual exposure mode.
+    /// </summary>
     private static readonly Dictionary<uint, string> ExposureCompensationValues = new()
     {
-        { 0x28, "+5 0xFD –1/3" },
-        { 0x25, "+4 2/3 0xFC –1/2" },
-        { 0x24, "+4 1/2 0xFB –2/3" },
-        { 0x23, "+4 1/3 0xF8 –1" },
-        { 0x20, "+4 0xF5 –1 1/3" },
-        { 0x1D, "+3 2/3 0xF4 –1 1/2" },
-        { 0x1C, "+3 1/2 0xF3 –1 2/3" },
-        { 0x1B, "+3 1/3 0xF0 –2" },
-        { 0x18, "+3 0xED –2 1/3" },
-        { 0x15, "+2 2/3 0xEC –2 1/2" },
-        { 0x14, "+2 1/2 0xEB –2 2/3 " }
+        { 0x28, "+5" },
+        { 0x25, "+4 2/3" },
+        { 0x24, "+4 1/2" },
+        { 0x23, "+4 1/3" },
+        { 0x20, "+4" },
+        { 0x1D, "+3 2/3" },
+        { 0x1C, "+3 1/2" },
+        { 0x1B, "+3 1/3" },
+        { 0x18, "+3" },
+        { 0x15, "+2 2/3" },
+        { 0x14, "+2 1/2" },
+        { 0x13, "+2 1/3" },
+        { 0x10, "+2" },
+        { 0x0D, "+1 2/3" },
+        { 0x0C, "+1 1/2" },
+        { 0x0B, "+1 1/3" },
+        { 0x08, "+1" },
+        { 0x05, "+2/3" },
+        { 0x04, "+1/2" },
+        { 0x03, "+1/3" },
+        { 0x00, "0" },
+        { 0xFD, "-1/3" },
+        { 0xFC, "-1/2" },
+        { 0xFB, "-2/3" },
+        { 0xF8, "-1" },
+        { 0xF5, "-1 1/3" },
+        { 0xF4, "-1 1/2" },
+        { 0xF3, "-1 2/3" },
+        { 0xF0, "-2" },
+        { 0xED, "-2 1/3" },
+        { 0xEC, "-2 1/2" },
+        { 0xEB, "-2 2/3" },
+        { 0xE8, "-3" },
+        { 0xE5, "-3 1/3" },
+        { 0xE4, "-3 1/2" },
+        { 0xE3, "-3 2/3" },
+        { 0xE0, "-4" },
+        { 0xDD, "-4 1/3" },
+        { 0xDC, "-4 1/2" },
+        { 0xDB, "-4 2/3" },
+        { 0xD8, "-5" }
     };
-    
-    private static Dictionary<string, uint> AvByName { get; } = AvValues.ToDictionary(v => v.Value, v => v.Key);
 
-    private static Dictionary<string, uint> TvByName { get; } = TvValues.ToDictionary(v => v.Value, v => v.Key);
-
-    private static Dictionary<string, uint> ISOByName { get; } = ISOValues.ToDictionary(v => v.Value, v => v.Key);
-
-    private static Dictionary<string, uint> WhiteBalanceByName { get; } = WhiteBalanceValues.ToDictionary(v => v.Value, v => v.Key);
-    
-    private static Dictionary<string, uint> ExposureCompensationByName { get; } = ExposureCompensationValues.ToDictionary(v => v.Value, v => v.Key);
-    
-    public static Dictionary<uint, string> GetPropertyValues(this uint propId)
+    /// <summary>
+    /// Values of kEdsPropID_AEMode (EDSDK API reference 5.2.19).
+    /// </summary>
+    internal static readonly Dictionary<uint, string> AEModeValues = new()
     {
-        switch (propId)
-        {
-            case EDSDK.PropID_Av: return AvValues;
-            case EDSDK.PropID_Tv: return TvValues;
-            case EDSDK.PropID_ISOSpeed: return ISOValues;
-            case EDSDK.PropID_WhiteBalance: return WhiteBalanceValues;
-            case EDSDK.PropID_ExposureCompensation: return ExposureCompensationValues;
+        { 0x00, "Program AE" },
+        { 0x01, "Shutter-Speed Priority AE" },
+        { 0x02, "Aperture Priority AE" },
+        { 0x03, "Manual Exposure" },
+        { 0x04, "Bulb" },
+        { 0x05, "Auto Depth-of-Field AE" },
+        { 0x06, "Depth-of-Field AE" },
+        { 0x07, "Camera settings registered" },
+        { 0x08, "Lock" },
+        { 0x09, "Auto" },
+        { 0x0A, "Night Scene Portrait" },
+        { 0x0B, "Sports" },
+        { 0x0C, "Portrait" },
+        { 0x0D, "Landscape" },
+        { 0x0E, "Close-Up" },
+        { 0x0F, "Flash Off" },
+        { 0x13, "Creative Auto" },
+        { 0x14, "Movies" },
+        { 0x15, "Photo In Movie" },
+        { 0x16, "Scene Intelligent Auto" },
+        { 0x17, "Night Scenes" },
+        { 0x18, "Backlit Scenes" },
+        { 0x1A, "Kids" },
+        { 0x1B, "Food" },
+        { 0x1C, "Candlelight" },
+        { 0x1E, "Grainy B/W" },
+        { 0x1F, "Soft focus" },
+        { 0x20, "Toy camera effect" },
+        { 0x21, "Fish-eye effect" },
+        { 0x22, "Water painting effect" },
+        { 0x23, "Miniature effect" },
+        { 0x24, "HDR art standard" },
+        { 0x25, "HDR art vivid" },
+        { 0x26, "HDR art bold" },
+        { 0x27, "HDR art embossed" },
+        { 0x28, "Dream" },
+        { 0x29, "Old Movies" },
+        { 0x2A, "Memory" },
+        { 0x2B, "Dramatic B&W" },
+        { 0x2C, "Miniature effect movie" },
+        { 0x2D, "Panning" },
+        { 0x2E, "Group Photo" },
+        { 0x32, "Myself (Self Portrait)" },
+        { 0x33, "Plus Movie Auto" },
+        { 0x34, "SmoothSkin" },
+        { 0x36, "Silent Mode" },
+        { 0x37, "Flexible-priority AE" },
+        { 0x38, "Oil painting (Art bold effect)" },
+        { 0x39, "Fireworks" },
+        { 0x3A, "Star portrait" },
+        { 0x3B, "Star nightscape" },
+        { 0x3C, "Star trails" },
+        { 0x3D, "Star time-lapse movie" },
+        { 0x3E, "Background blur" },
+        { 0x3F, "VideoBlog" },
+        { 0x41, "Movie IS mode" },
+        { 0x43, "Smooth skin movie" }
+    };
 
-            default: throw new ArgumentOutOfRangeException();
-        }
+    /// <summary>
+    /// AE modes of the "creative zone", in which exposure settings (ISO, Av, Tv, ...) can be changed remotely.
+    /// In the other ("basic zone") modes the camera sets capture-related properties automatically.
+    /// </summary>
+    internal static readonly HashSet<uint> CreativeZoneAEModes = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x37];
+
+    private static readonly Dictionary<uint, Dictionary<string, uint>> DescriptionsByProperty = new()
+    {
+        { EDSDK.PropID_Av, Reverse(AvValues) },
+        { EDSDK.PropID_Tv, Reverse(TvValues) },
+        { EDSDK.PropID_ISOSpeed, Reverse(ISOValues) },
+        { EDSDK.PropID_WhiteBalance, Reverse(WhiteBalanceValues) },
+        { EDSDK.PropID_ExposureCompensation, Reverse(ExposureCompensationValues) },
+    };
+
+    private static Dictionary<string, uint> Reverse(Dictionary<uint, string> values) =>
+        values.ToDictionary(v => v.Value, v => v.Key, StringComparer.OrdinalIgnoreCase);
+
+    public static Dictionary<uint, string> GetPropertyValues(this uint propId) => propId switch
+    {
+        EDSDK.PropID_Av => AvValues,
+        EDSDK.PropID_Tv => TvValues,
+        EDSDK.PropID_ISOSpeed => ISOValues,
+        EDSDK.PropID_WhiteBalance => WhiteBalanceValues,
+        EDSDK.PropID_ExposureCompensation => ExposureCompensationValues,
+        _ => throw new ArgumentOutOfRangeException(nameof(propId), $"Unsupported property 0x{propId:X}")
+    };
+
+    public static Dictionary<string, uint> GetPropertyDescriptions(this uint propId) =>
+        DescriptionsByProperty.TryGetValue(propId, out var descriptions)
+            ? descriptions
+            : throw new ArgumentOutOfRangeException(nameof(propId), $"Unsupported property 0x{propId:X}");
+
+    /// <summary>
+    /// Returns the human readable label of a property value, or the raw value (e.g. "0x93") when the value is unknown.
+    /// </summary>
+    public static string DescribeValue(this uint propId, uint value) =>
+        propId.GetPropertyValues().TryGetValue(value, out var description) ? description : FormatRawValue(value);
+
+    public static string FormatRawValue(uint value) => $"0x{value:X}";
+
+    /// <summary>
+    /// Parses a property value from its label (case-insensitive) or from a raw value ("147", "0x93").
+    /// </summary>
+    public static bool TryParseValue(this uint propId, string text, out uint value)
+    {
+        text = text.Trim();
+
+        if (propId.GetPropertyDescriptions().TryGetValue(text, out value))
+            return true;
+
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return uint.TryParse(text.AsSpan(2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out value);
+
+        // Plain integers are only accepted for properties whose labels are not numbers themselves (ISO "100", Av "8"...)
+        // to avoid ambiguities between a label and a raw value.
+        if (propId is EDSDK.PropID_WhiteBalance)
+            return uint.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out value);
+
+        return false;
     }
 
-    public static Dictionary<string, uint> GetPropertyDescriptions(this uint propId)
+    /// <summary>
+    /// Gets the exposure duration in seconds of a kEdsPropID_Tv value. Returns false for Bulb and unknown values.
+    /// </summary>
+    public static bool TryGetExposureSeconds(uint tvValue, out double seconds)
     {
-        switch (propId)
-        {
-            case EDSDK.PropID_Av: return AvByName;
-            case EDSDK.PropID_Tv: return TvByName;
-            case EDSDK.PropID_ISOSpeed: return ISOByName;
-            case EDSDK.PropID_WhiteBalance: return WhiteBalanceByName;
-            case EDSDK.PropID_ExposureCompensation: return ExposureCompensationByName;
+        seconds = 0;
 
-            default: throw new NotSupportedException();
+        if (!TvValues.TryGetValue(tvValue, out var label) || tvValue == 0x0C)
+            return false;
+
+        label = label.Replace(" (1/3)", string.Empty);
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+
+        if (label.EndsWith('"'))
+            return double.TryParse(label.TrimEnd('"'), System.Globalization.NumberStyles.Float, culture, out seconds);
+
+        var parts = label.Split('/');
+        if (parts.Length == 2
+            && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, culture, out var numerator)
+            && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, culture, out var denominator)
+            && denominator > 0)
+        {
+            seconds = numerator / denominator;
+            return true;
         }
+
+        return false;
     }
+
+    /// <summary>
+    /// Translates the parameter of kEdsStateEvent_CaptureError (EDSDK API reference 4.2.17).
+    /// </summary>
+    public static string GetCaptureErrorMessage(uint errorCode) => errorCode switch
+    {
+        0x00000001 => "Shooting failure (e.g. focus failure)",
+        0x00000002 => "Lens cover was closed",
+        0x00000003 => "General shooting error (Bulb or mirror-up)",
+        0x00000004 => "Camera is busy cleaning the sensor",
+        0x00000005 => "Camera is set to silent operation",
+        0x00000006 => "No card inserted",
+        0x00000007 => "Card error (full or other)",
+        0x00000008 => "Card write-protected",
+        _ => $"Unknown capture error: 0x{errorCode:X}"
+    };
 }

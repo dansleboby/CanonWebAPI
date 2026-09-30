@@ -1,483 +1,1079 @@
-using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 
 namespace Canon.Core;
 
 /// <summary>
 /// Represents a Canon camera connected via the Canon EDSDK.
 /// </summary>
-public class CanonCamera : IDisposable
+/// <remarks>
+/// The SDK is initialized once for the lifetime of the instance. The connection to the camera is opened on demand,
+/// closed when the camera is turned off or unplugged, and opened again automatically when it comes back
+/// (hot plug through <c>EdsSetCameraAddedHandler</c>, or on the next call).
+/// Every SDK call runs on a dedicated thread (<see cref="CanonThread"/>).
+/// </remarks>
+public sealed class CanonCamera : IDisposable
 {
-    private readonly Lock _initLock = new();
-    private Task? _initTask;
-    private nint _cameraRef;
-    private readonly CanonThread _thread;
+    private sealed class PendingCapture(IReadOnlySet<string> fileTypes)
+    {
+        public IReadOnlySet<string> FileTypes { get; } = fileTypes;
+        public TaskCompletionSource<CapturedImage> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
-    // Private fields to avoid garbage collection issues with delegates
+    private readonly CanonThread _thread;
+    private readonly ILogger? _logger;
+    private readonly CanonCameraOptions _options;
+    private readonly IReadOnlySet<string> _defaultFileTypes;
+
+    // Delegates are kept in fields so the garbage collector does not collect them while the SDK holds pointers to them.
     private readonly EDSDK.EdsObjectEventHandler _onCameraObject;
     private readonly EDSDK.EdsStateEventHandler _onCameraStateChanged;
     private readonly EDSDK.EdsProgressCallback _onCameraProgress;
     private readonly EDSDK.EdsPropertyEventHandler _onCameraPropertyChanged;
+    private readonly EDSDK.EdsCameraAddedHandler _onCameraAdded;
 
-    private readonly SemaphoreSlim _takePictureSemaphore = new(1, 1);
-    private TaskCompletionSource<byte[]>? _takePictureCompletion;
-    private byte[]? _latestImageBytes;
+    // Only accessed on the Canon thread.
+    private bool _sdkInitialized;
+    private nint _cameraRef;
+    private nint _flashRef;
+    private bool? _flashFiring;
+    private volatile string? _flashError;
+
+    private volatile bool _connected;
+    private volatile bool _liveViewActive;
+    private volatile bool _liveViewRequested;
+    private volatile bool _capturing;
+    private volatile PendingCapture? _pendingCapture;
+    private volatile CapturedImage? _latestImage;
+
+    // kEdsStateEvent_JobStatusChanged: the camera still has files to transfer.
+    private volatile bool _transferJobPending;
+    // Set when a capture timed out: files arriving until the camera is idle belong to that capture, not the next one.
+    private volatile bool _staleTransfers;
+
+    private readonly Lock _connectLock = new();
+    private Task? _connectTask;
+    private readonly SemaphoreSlim _shutterLock = new(1, 1);
+    private int _disposed;
 
     public delegate void ProgressChangedHandler(uint percent, nint context, ref bool cancel);
     public delegate void PropertyChangedHandler(CameraProperty property, string value);
 
+    /// <summary>
+    /// Raised when one of the <see cref="CameraProperty"/> values changes on the camera.
+    /// </summary>
     public event PropertyChangedHandler? PropertyChanged;
+
+    /// <summary>
+    /// Raised while a captured file is downloaded.
+    /// </summary>
     public event ProgressChangedHandler? ProgressChanged;
 
-    public CanonCamera(ILogger? logger = null)
+    /// <summary>
+    /// Raised when the camera gets connected (true) or disconnected (false).
+    /// </summary>
+    public event Action<bool>? ConnectionChanged;
+
+    public CanonCamera(ILogger? logger = null, CanonCameraOptions? options = null)
     {
-        _thread = new CanonThread(logger);
+        _logger = logger;
+        _options = options ?? new CanonCameraOptions();
+        _defaultFileTypes = CaptureFileTypes.Normalize(_options.CaptureFileTypes);
+        if (_defaultFileTypes.Count == 0)
+            _defaultFileTypes = CaptureFileTypes.Normalize(["jpg"]);
+
+        // Events are only pumped once the SDK is initialized.
+        _thread = new CanonThread(logger, () =>
+        {
+            if (_sdkInitialized)
+                EDSDK.EdsGetEvent();
+        });
 
         _onCameraObject = OnCameraObject;
         _onCameraStateChanged = OnCameraStateChanged;
         _onCameraPropertyChanged = OnCameraPropertyChanged;
         _onCameraProgress = OnCameraProgress;
+        _onCameraAdded = OnCameraAdded;
     }
 
-    private uint OnCameraPropertyChanged(uint inEvent, uint inPropertyId, uint inParam, nint inContext)
+    /// <summary>
+    /// True while a session is open with the camera.
+    /// </summary>
+    public bool IsConnected => _connected;
+
+    /// <summary>
+    /// True while the camera streams its live view to the PC.
+    /// </summary>
+    public bool IsLiveViewActive => _liveViewActive;
+
+    #region Connection
+
+    /// <summary>
+    /// Connects to the first detected camera, if not already connected.
+    /// </summary>
+    /// <exception cref="CameraNotConnectedException">No camera is detected.</exception>
+    public async Task ConnectAsync()
     {
-        if (inEvent == EDSDK.PropertyEvent_PropertyChanged && Enum.IsDefined((CameraProperty)inPropertyId) && PropertyChanged != null)
+        if (_connected)
+            return;
+
+        Task task;
+        lock (_connectLock)
+            task = _connectTask ??= _thread.InvokeAsync(ConnectCore);
+
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            lock (_connectLock)
+            {
+                if (_connectTask == task)
+                    _connectTask = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes the SDK. Must be called once per process (EDSDK API reference 2.9); terminated in <see cref="Dispose"/>.
+    /// </summary>
+    private void EnsureSdkInitialized()
+    {
+        if (_sdkInitialized)
+            return;
+
+        EDSDK.EdsInitializeSDK().ThrowIfEdSdkError("Failed to initialize EDSDK");
+        _sdkInitialized = true;
+
+        var err = EDSDK.EdsSetCameraAddedHandler(_onCameraAdded, nint.Zero);
+        if (err != EDSDK.EDS_ERR_OK)
+            _logger?.LogWarning("Could not register the camera added handler (0x{Error:X}): hot plug is disabled", err);
+
+        _logger?.LogInformation("EDSDK initialized");
+    }
+
+    private void ConnectCore()
+    {
+        EnsureSdkInitialized();
+
+        if (_cameraRef != nint.Zero)
+            return;
+
+        EDSDK.EdsGetCameraList(out var cameraList).ThrowIfEdSdkError("Failed to get camera list");
+        nint camera;
+
+        try
+        {
+            EDSDK.EdsGetChildCount(cameraList, out var cameraCount).ThrowIfEdSdkError("Failed to get camera count");
+
+            if (cameraCount == 0)
+                throw new CameraNotConnectedException("No Canon camera detected");
+
+            EDSDK.EdsGetChildAtIndex(cameraList, 0, out camera).ThrowIfEdSdkError("Could not get first camera");
+        }
+        finally
+        {
+            EDSDK.EdsRelease(cameraList);
+        }
+
+        var sessionOpened = false;
+
+        try
+        {
+            // Private properties must be enabled before opening the session (EDSDK API reference 6.9 and 6.11).
+            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_EnablePrivateProperty, EDSDK.EnablePrivateProperty_TempStatus, sizeof(uint), EDSDK.PropID_TempStatus);
+            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_EnablePrivateProperty, EDSDK.EnablePrivateProperty_FixedMovie, sizeof(uint), EDSDK.PropID_FixedMovie);
+
+            // Handlers are registered before the session is opened, as in the SDK samples, so no event is missed.
+            EDSDK.EdsSetObjectEventHandler(camera, EDSDK.ObjectEvent_All, _onCameraObject, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to ObjectEvent");
+            EDSDK.EdsSetCameraStateEventHandler(camera, EDSDK.StateEvent_All, _onCameraStateChanged, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to StateEvent");
+            EDSDK.EdsSetPropertyEventHandler(camera, EDSDK.PropertyEvent_All, _onCameraPropertyChanged, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to PropertyEvent");
+
+            EDSDK.EdsOpenSession(camera).ThrowIfEdSdkError("Failed to open camera session");
+            sessionOpened = true;
+
+            // Pictures are transferred to the PC (the photo booth camera has no memory card).
+            var err = EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_SaveTo, 0, sizeof(uint), (uint)EDSDK.EdsSaveTo.Host);
+            if (err == EDSDK.EDS_ERR_OK)
+                err = EDSDK.EdsSetCapacity(camera, new EDSDK.EdsCapacity { Reset = 1, BytesPerSector = 0x1000, NumberOfFreeClusters = 0x7FFFFFFF });
+            if (err != EDSDK.EDS_ERR_OK)
+                _logger?.LogWarning("Could not set the PC as the save destination: {Error}", EdsdkHelper.GetErrorMessage(err));
+        }
+        catch
+        {
+            if (sessionOpened)
+                EDSDK.EdsCloseSession(camera);
+            EDSDK.EdsRelease(camera);
+            throw;
+        }
+
+        _cameraRef = camera;
+        _connected = true;
+        _liveViewActive = false;
+
+        InitializeFlash(camera);
+
+        EDSDK.EdsGetDeviceInfo(camera, out var info);
+        _logger?.LogInformation("Connected to camera {Camera}", info.szDeviceDescription);
+        RaiseConnectionChanged(true);
+    }
+
+    /// <summary>
+    /// Closes the session and releases the camera. Runs on the Canon thread.
+    /// </summary>
+    private void DisconnectCore(string reason, nint expectedCamera = 0)
+    {
+        var camera = _cameraRef;
+
+        // The session that failed may already have been replaced by a new one: keep the new one.
+        if (expectedCamera != nint.Zero && camera != expectedCamera)
+            return;
+
+        _connected = false;
+        _liveViewActive = false;
+
+        _pendingCapture?.Completion.TrySetException(new CameraNotConnectedException($"Camera disconnected: {reason}"));
+
+        if (camera == nint.Zero)
+            return;
+
+        _cameraRef = nint.Zero;
+
+        if (_flashRef != nint.Zero)
+        {
+            EDSDK.EdsRelease(_flashRef);
+            _flashRef = nint.Zero;
+        }
+        _flashFiring = null;
+
+        EDSDK.EdsCloseSession(camera);
+        EDSDK.EdsRelease(camera);
+
+        _logger?.LogWarning("Camera disconnected: {Reason}", reason);
+        RaiseConnectionChanged(false);
+    }
+
+    private void RaiseConnectionChanged(bool connected)
+    {
+        var handler = ConnectionChanged;
+        if (handler != null)
+            Task.Run(() => handler(connected));
+    }
+
+    private uint OnCameraAdded(nint inContext)
+    {
+        _logger?.LogInformation("A camera was plugged in");
+
+        if (!_connected && Volatile.Read(ref _disposed) == 0)
         {
             Task.Run(async () =>
             {
-                var value = await GetValue((CameraProperty)inPropertyId);
-                Debug.WriteLine($"Prop: {(CameraProperty)inPropertyId} = {value}");
-                PropertyChanged?.Invoke((CameraProperty)inPropertyId, value);
+                try
+                {
+                    // Give the camera a moment to be ready before opening the session.
+                    await Task.Delay(500);
+                    await ConnectAsync();
+
+                    if (_liveViewRequested)
+                        await StartLiveViewAsync();
+                }
+                catch (Exception e)
+                {
+                    _logger?.LogWarning(e, "Could not connect to the plugged camera");
+                }
             });
         }
 
-        return 0;
-    }
-
-
-    /// <summary>
-    /// Handles camera state changes, such as shutdown events.
-    /// </summary>
-    private uint OnCameraStateChanged(uint inEvent, uint inParameter, IntPtr inContext)
-    {
-        if (inEvent == EDSDK.StateEvent_Shutdown)
-        {
-            lock (_initLock)
-                _initTask = null;
-
-            // If the camera shuts down, fail any pending picture task
-            _takePictureCompletion?.TrySetException(new InvalidOperationException("Camera was disconnected or shut down."));
-        }
-        else if (inEvent == EDSDK.StateEvent_CaptureError)
-        {
-            // Camera failed to take the shot (e.g., focus failure)
-            // This will immediately fail the TakePicture() task with a useful message
-            string errorMsg = GetCaptureErrorMessage(inParameter);
-            _takePictureCompletion?.TrySetException(new Exception(errorMsg)); // Or use your custom EdsException
-        }
-
-        return 0;
-    }
-    
-    /// <summary>
-    /// Helper method to translate capture error codes into messages.
-    /// Based on EDSDK_API_EN.pdf Page 96
-    /// </summary>
-    private string GetCaptureErrorMessage(uint errorCode)
-    {
-        // --- THIS IS THE FIXED FUNCTION ---
-        // Rewritten to use a classic switch statement for older C# compatibility
-        switch (errorCode)
-        {
-            case 0x00000001:
-                return "Shooting failure (General Error)";
-            case 0x00000002:
-                return "Lens cover was closed";
-            case 0x00000003:
-                return "General shooting error (Bulb or mirror-up)";
-            case 0x00000004:
-                return "Camera is busy cleaning the sensor";
-            case 0x00000005:
-                return "Camera is set to silent operation";
-            case 0x00000006:
-                return "No card inserted";
-            case 0x00000007:
-                return "Card error (Full or other)";
-            case 0x00000008:
-                return "Card write-protected";
-            default:
-                return $"Unknown capture error: 0x{errorCode:X}";
-        }
+        return EDSDK.EDS_ERR_OK;
     }
 
     /// <summary>
-    /// Initializes the Canon SDK and connects to the first detected camera.
+    /// Runs <paramref name="func"/> on the Canon thread with the connected camera.
     /// </summary>
-    /// <exception cref="InvalidOperationException"></exception>
-    private Task InitializeAsync()
+    private async Task<T> RunAsync<T>(Func<nint, T> func)
     {
-        lock (_initLock)
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await ConnectAsync();
+
+        var usedCamera = nint.Zero;
+
+        try
         {
-            return _initTask ??= _thread.InvokeAsync(() =>
+            return await _thread.InvokeAsync(() =>
+            {
+                usedCamera = _cameraRef;
+                if (usedCamera == nint.Zero)
+                    throw new CameraNotConnectedException("Camera is not connected");
+
+                return func(usedCamera);
+            });
+        }
+        catch (EdsException e) when (e.IsDisconnected && e is not CameraNotConnectedException && usedCamera != nint.Zero)
+        {
+            // The session is no longer usable: drop it so the next call reconnects.
+            await _thread.InvokeAsync(() => DisconnectCore(e.Message, usedCamera));
+            throw;
+        }
+    }
+
+    private Task RunAsync(Action<nint> action) => RunAsync(camera =>
+    {
+        action(camera);
+        return true;
+    });
+
+    /// <summary>
+    /// Same as <see cref="RunAsync{T}"/>, retried when the camera answers "device busy" (as in the SDK samples).
+    /// </summary>
+    private async Task<T> RunWithBusyRetryAsync<T>(Func<nint, T> func, CancellationToken cancellationToken = default)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await RunAsync(func);
+            }
+            catch (EdsException e) when (e.IsBusy && attempt < Math.Max(1, _options.BusyRetryCount))
+            {
+                _logger?.LogDebug("Camera busy, retrying ({Attempt})", attempt);
+                await Task.Delay(_options.BusyRetryDelayMilliseconds, cancellationToken);
+            }
+        }
+    }
+
+    private Task RunWithBusyRetryAsync(Action<nint> action, CancellationToken cancellationToken = default) =>
+        RunWithBusyRetryAsync(camera =>
+        {
+            action(camera);
+            return true;
+        }, cancellationToken);
+
+    #endregion
+
+    #region Event handlers
+
+    private uint OnCameraPropertyChanged(uint inEvent, uint inPropertyId, uint inParam, nint inContext)
+    {
+        if (inEvent != EDSDK.PropertyEvent_PropertyChanged || PropertyChanged == null)
+            return EDSDK.EDS_ERR_OK;
+
+        // 0x0000FFFF means the changed property cannot be identified: refresh all of them (EDSDK API reference 4.2.2).
+        CameraProperty[] properties = inPropertyId == EDSDK.PropID_Unknown
+            ? Enum.GetValues<CameraProperty>()
+            : Enum.IsDefined((CameraProperty)inPropertyId) ? [(CameraProperty)inPropertyId] : [];
+
+        foreach (var property in properties)
+        {
+            Task.Run(async () =>
             {
                 try
                 {
-                    EDSDK.EdsInitializeSDK().ThrowIfEdSdkError("Failed to initialize EDSDK");
-                    EDSDK.EdsGetCameraList(out var cameraList).ThrowIfEdSdkError("Failed to get camera list");
-                    EDSDK.EdsGetChildCount(cameraList, out var cameraCount).ThrowIfEdSdkError("Failed to get camera count");
-
-                    try
-                    {
-                        if (cameraCount == 0)
-                            throw new InvalidOperationException("No Canon camera detected");
-
-                        EDSDK.EdsGetChildAtIndex(cameraList, 0, out _cameraRef).ThrowIfEdSdkError("Could not get first camera");
-                    }
-                    finally
-                    {
-                        EDSDK.EdsRelease(cameraList);
-                    }
-
-                    EDSDK.EdsOpenSession(_cameraRef).ThrowIfEdSdkError("Failed to open camera session");
-                    EDSDK.EdsSetPropertyData(_cameraRef, EDSDK.PropID_SaveTo, 0, sizeof(uint), (uint)EDSDK.EdsSaveTo.Host).ThrowIfEdSdkError("Failed set SaveTo");
-                    EDSDK.EdsSetCapacity(_cameraRef, new EDSDK.EdsCapacity { Reset = 1, BytesPerSector = 0x1000, NumberOfFreeClusters = 0x7FFFFFFF }).ThrowIfEdSdkError("Failed to set Capacity");
-                    EDSDK.EdsSetPropertyData(_cameraRef, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), EDSDK.EvfOutputDevice_PC).ThrowIfEdSdkError("Failed to set EVF Output");
-                    
-                    EDSDK.EdsSetObjectEventHandler(_cameraRef, EDSDK.ObjectEvent_All, _onCameraObject, _cameraRef).ThrowIfEdSdkError("Failed to subscribe to ObjectEvent");
-                    EDSDK.EdsSetCameraStateEventHandler(_cameraRef, EDSDK.StateEvent_All, _onCameraStateChanged, _cameraRef).ThrowIfEdSdkError("Failed to subscribe to StateEvent");
-                    EDSDK.EdsSetPropertyEventHandler(_cameraRef, EDSDK.PropertyEvent_All, _onCameraPropertyChanged, _cameraRef).ThrowIfEdSdkError("Failed to subscribe to PropertyEvent");
+                    var value = await GetValue(property);
+                    PropertyChanged?.Invoke(property, value);
                 }
-                catch(Exception ex)
+                catch (Exception e)
                 {
-                    EDSDK.EdsTerminateSDK();
-                    
-                    lock (_initLock) 
-                        _initTask = null;
-
-                    throw new EdsException(EDSDK.EDS_ERR_DEVICE_INVALID, "Failed to initialize Canon camera", ex);
+                    _logger?.LogDebug(e, "Could not read {Property} after a change notification", property);
                 }
             });
         }
+
+        return EDSDK.EDS_ERR_OK;
+    }
+
+    /// <summary>
+    /// Handles camera state changes (EDSDK API reference 4.2).
+    /// </summary>
+    private uint OnCameraStateChanged(uint inEvent, uint inParameter, nint inContext)
+    {
+        switch (inEvent)
+        {
+            case EDSDK.StateEvent_Shutdown:
+                // SDK calls are deferred until the callback has returned.
+                _connected = false;
+                _thread.Post(() => DisconnectCore("camera turned off or unplugged"));
+                break;
+
+            case EDSDK.StateEvent_WillSoonShutDown:
+                _logger?.LogInformation("Camera will turn off in {Seconds} s", inParameter);
+                if (_options.PreventAutoPowerOff)
+                {
+                    _thread.Post(() =>
+                    {
+                        if (_cameraRef != nint.Zero)
+                            EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_ExtendShutDownTimer, 0);
+                    });
+                }
+                break;
+
+            case EDSDK.StateEvent_JobStatusChanged:
+                _transferJobPending = inParameter != 0;
+                if (!_transferJobPending)
+                    _staleTransfers = false;
+                break;
+
+            case EDSDK.StateEvent_CaptureError:
+                // The camera failed to take the shot (e.g. focus failure).
+                _pendingCapture?.Completion.TrySetException(new CaptureFailedException(inParameter));
+                break;
+
+            case EDSDK.StateEvent_InternalError:
+                // The camera will probably not work properly anymore: drop the connection (EDSDK API reference 4.2.18).
+                _logger?.LogError("EDSDK internal error 0x{Error:X}", inParameter);
+                _thread.Post(() => DisconnectCore("EDSDK internal error"));
+                break;
+        }
+
+        return EDSDK.EDS_ERR_OK;
     }
 
     private uint OnCameraProgress(uint inPercent, nint inContext, ref bool outCancel)
     {
         ProgressChanged?.Invoke(inPercent, inContext, ref outCancel);
-        return 0;
+        return EDSDK.EDS_ERR_OK;
     }
+
+    /// <summary>
+    /// Handles camera object events, such as file transfer requests.
+    /// </summary>
+    private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
+    {
+        try
+        {
+            if (inEvent == EDSDK.ObjectEvent_DirItemRequestTransfer && inRef != nint.Zero)
+                TransferFile(inRef);
+        }
+        catch (Exception e)
+        {
+            _logger?.LogError(e, "Error while handling object event 0x{Event:X}", inEvent);
+        }
+        finally
+        {
+            if (inRef != nint.Zero)
+                EDSDK.EdsRelease(inRef);
+        }
+
+        return EDSDK.EDS_ERR_OK;
+    }
+
+    /// <summary>
+    /// Downloads a file the camera asks to transfer, or cancels the transfer when the file type is not wanted.
+    /// Every transfer request must end with EdsDownloadComplete or EdsDownloadCancel (EDSDK API reference 4.2.12).
+    /// </summary>
+    private void TransferFile(nint dirItem)
+    {
+        // A late file of a timed out capture must not answer the next capture.
+        var pending = _staleTransfers ? null : _pendingCapture;
+
+        try
+        {
+            var err = EDSDK.EdsGetDirectoryItemInfo(dirItem, out var info);
+            if (err != EDSDK.EDS_ERR_OK)
+            {
+                EDSDK.EdsDownloadCancel(dirItem);
+                err.ThrowIfEdSdkError("Failed to get file info");
+            }
+
+            if (!CaptureFileTypes.Matches(info.szFileName, pending?.FileTypes ?? _defaultFileTypes))
+            {
+                _logger?.LogDebug("Skipping {File}: file type not requested", info.szFileName);
+                EDSDK.EdsDownloadCancel(dirItem);
+                return;
+            }
+
+            var bytes = DownloadToMemory(dirItem, info);
+            var image = new CapturedImage(bytes, info.szFileName, CaptureFileTypes.GetContentType(info.szFileName));
+            _logger?.LogInformation("Downloaded {File} ({Size} bytes)", info.szFileName, bytes.Length);
+
+            // With several requested file types, the first file received answers the capture.
+            if (pending == null || pending.Completion.TrySetResult(image))
+                _latestImage = image;
+        }
+        catch (Exception e)
+        {
+            pending?.Completion.TrySetException(e);
+            if (pending == null)
+                throw;
+        }
+    }
+
+    private byte[] DownloadToMemory(nint dirItem, EDSDK.EdsDirectoryItemInfo info)
+    {
+        var err = EDSDK.EdsCreateMemoryStream(0, out var stream);
+        if (err != EDSDK.EDS_ERR_OK)
+        {
+            EDSDK.EdsDownloadCancel(dirItem);
+            err.ThrowIfEdSdkError("Could not create download stream");
+        }
+
+        try
+        {
+            // The progress callback must be registered before EdsDownload to be called during the transfer.
+            EDSDK.EdsSetProgressCallback(stream, _onCameraProgress, EDSDK.EdsProgressOption.Periodically, nint.Zero);
+
+            err = EDSDK.EdsDownload(dirItem, info.Size, stream);
+            if (err != EDSDK.EDS_ERR_OK)
+            {
+                EDSDK.EdsDownloadCancel(dirItem);
+                err.ThrowIfEdSdkError($"Failed to download file {info.szFileName}");
+            }
+
+            EDSDK.EdsDownloadComplete(dirItem).ThrowIfEdSdkError("Failed to complete download");
+
+            return CopyStream(stream);
+        }
+        finally
+        {
+            EDSDK.EdsRelease(stream);
+        }
+    }
+
+    private static byte[] CopyStream(nint stream)
+    {
+        EDSDK.EdsGetLength(stream, out var length).ThrowIfEdSdkError("Could not get stream length");
+        if (length == 0)
+            return [];
+
+        EDSDK.EdsGetPointer(stream, out var pointer).ThrowIfEdSdkError("Could not get stream pointer");
+        if (pointer == nint.Zero)
+            throw new EdsException(EDSDK.EDS_ERR_INVALID_POINTER, "Stream pointer is null");
+
+        var bytes = new byte[length];
+        Marshal.Copy(pointer, bytes, 0, (int)length);
+        return bytes;
+    }
+
+    #endregion
+
+    #region Properties
 
     /// <summary>
     /// Gets the connected camera's device name.
     /// </summary>
-    public async Task<string> GetCameraName()
+    public Task<string> GetCameraName() => RunAsync(camera =>
     {
-        await InitializeAsync();
+        EDSDK.EdsGetDeviceInfo(camera, out var info).ThrowIfEdSdkError("Could not get device info");
+        return info.szDeviceDescription;
+    });
 
-        return await _thread.InvokeAsync(() =>
+    /// <summary>
+    /// Gets the value of a specific camera property, as a label (e.g. "1/125"), or a raw value ("0x93") when unknown.
+    /// </summary>
+    public Task<string> GetValue(CameraProperty property) => RunAsync(camera =>
+    {
+        EDSDK.EdsGetPropertyData(camera, (uint)property, 0, out uint value).ThrowIfEdSdkError($"Could not get {property}");
+        return ((uint)property).DescribeValue(value);
+    });
+
+    /// <summary>
+    /// Gets the values that can currently be set for a specific camera property.
+    /// </summary>
+    public Task<List<string>> GetSupportedValues(CameraProperty property) => RunAsync(camera =>
+        GetSettableValues(camera, property)
+            .Select(value => ((uint)property).DescribeValue(value))
+            .ToList());
+
+    private static uint[] GetSettableValues(nint camera, CameraProperty property)
+    {
+        EDSDK.EdsGetPropertyDesc(camera, (uint)property, out var desc).ThrowIfEdSdkError($"Could not get the supported values of {property}");
+
+        return desc.PropDesc
+            .Take(Math.Clamp(desc.NumElements, 0, desc.PropDesc.Length))
+            .Select(value => (uint)value)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Sets the raw value of a specific camera property.
+    /// The value is checked against the values the camera currently accepts, as the SDK documentation requires.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The camera does not accept this value now.</exception>
+    public Task SetValue(CameraProperty property, uint value) => RunWithBusyRetryAsync(camera =>
+    {
+        var settable = GetSettableValues(camera, property);
+        if (settable.Length > 0 && !settable.Contains(value))
         {
-            EDSDK.EdsGetDeviceInfo(_cameraRef, out var info).ThrowIfEdSdkError("Could not get device info");
-            return info.szDeviceDescription;
-        });
-    }
+            var allowed = string.Join(", ", settable.Select(v => ((uint)property).DescribeValue(v)));
+            throw new ArgumentOutOfRangeException(nameof(value), ((uint)property).DescribeValue(value),
+                $"The camera does not accept this {property} value now. Allowed values: {allowed}");
+        }
+
+        EDSDK.EdsSetPropertyData(camera, (uint)property, 0, sizeof(uint), value)
+            .ThrowIfEdSdkError($"Could not set {property} to {((uint)property).DescribeValue(value)}");
+    });
 
     /// <summary>
-    /// Gets the value of a specific camera property. 
+    /// Sets a camera property from its label (e.g. "1/125", "5.6", "Auto") or raw value ("0x93").
     /// </summary>
-    public async Task<string> GetValue(CameraProperty property)
+    /// <exception cref="ArgumentOutOfRangeException">The value is unknown or not accepted by the camera now.</exception>
+    public Task SetValue(CameraProperty property, string description)
     {
-        await InitializeAsync();
-            
-        return await _thread.InvokeAsync(() =>
-        {
-            var values = ((uint)property).GetPropertyValues();
+        if (!((uint)property).TryParseValue(description, out var value))
+            throw new ArgumentOutOfRangeException(nameof(description), description, $"Invalid value '{description}' for property {property}");
 
-            EDSDK.EdsGetPropertyData(_cameraRef, (uint)property, 0, out uint value).ThrowIfEdSdkError($"Could not get property 0x{property:X}");
-            return values.TryGetValue(value, out var description) ? description : value.ToString();
-        });
+        return SetValue(property, value);
     }
 
     /// <summary>
-    /// Gets a list of supported values for a specific camera property. 
+    /// Gets the shooting mode of the camera (mode dial position and still/movie mode).
     /// </summary>
-    public async Task<List<string>> GetSupportedValues(CameraProperty propId)
+    public Task<CameraMode> GetMode() => RunAsync(camera =>
     {
-        await InitializeAsync();
+        EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_AEMode, 0, out uint aeMode).ThrowIfEdSdkError("Could not get the AE mode");
 
-        return await _thread.InvokeAsync(() =>
-        {
-            var values = ((uint)propId).GetPropertyValues();
-            EDSDK.EdsGetPropertyDesc(_cameraRef, (uint)propId, out var desc).ThrowIfEdSdkError("EdsGetPropertyDesc failed");
+        bool? isMovieMode = EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_FixedMovie, 0, out uint fixedMovie) == EDSDK.EDS_ERR_OK
+            ? fixedMovie != 0
+            : null;
 
-            return Enumerable.Range(0, desc.NumElements)
-                .Select(i => values.GetValueOrDefault((uint)desc.PropDesc[i]))
-                .Where(x => x != null)
-                .Select(x => x!)
-                .ToList();
-        });
-    }
+        var label = EdsdkHelper.AEModeValues.TryGetValue(aeMode, out var description) ? description : EdsdkHelper.FormatRawValue(aeMode);
+        return new CameraMode(aeMode, label, EdsdkHelper.CreativeZoneAEModes.Contains(aeMode), isMovieMode);
+    });
 
     /// <summary>
-    /// Sets the value of a specific camera property. 
+    /// Gets the restrictions applied by the camera because of its internal temperature.
     /// </summary>
-    /// <param name="propId">The property ID to set</param>
-    /// <param name="value">The value to set for the property</param>
-    public async Task SetValue(CameraProperty propId, uint value)
+    public Task<TemperatureStatus> GetTemperatureStatus() => RunAsync(camera =>
     {
-        await InitializeAsync();
-        
-        await _thread.InvokeAsync(() => EDSDK.EdsSetPropertyData(_cameraRef, (uint)propId, 0, sizeof(uint), value).ThrowIfEdSdkError($"Could not set property {propId} to {value}"));
-    }
+        var err = EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_TempStatus, 0, out uint value);
 
-    public Task SetValue(CameraProperty propId, string description)
-    {
-        var descriptions = ((uint)propId).GetPropertyDescriptions();
-        
-        if (!descriptions.TryGetValue(description, out var value))
-            throw new ArgumentOutOfRangeException($"Invalid value '{description}' for property {propId}");
+        if (err is EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE or EDSDK.EDS_ERR_NOT_SUPPORTED or EDSDK.EDS_ERR_DEVICEPROP_NOT_SUPPORTED or EDSDK.EDS_ERR_INVALID_PARAMETER)
+            return TemperatureStatus.Unsupported;
 
-        return SetValue(propId, value);
-    }
+        err.ThrowIfEdSdkError("Could not get the temperature status");
+        return TemperatureStatus.FromRawValue(value);
+    });
+
+    #endregion
+
+    #region Shooting
 
     /// <summary>
-    /// Gets the latest image bytes captured by the camera, if any
+    /// Gets the latest image bytes captured by the camera, if any.
     /// </summary>
-    public Task<byte[]?> GetLatestImageBytes() => Task.FromResult(_latestImageBytes);
+    public Task<byte[]?> GetLatestImageBytes() => Task.FromResult(_latestImage?.Data);
 
     /// <summary>
-    /// Sends an autofocus command to the camera.
+    /// Gets the latest file captured by the camera, if any.
+    /// </summary>
+    public CapturedImage? GetLatestImage() => _latestImage;
+
+    /// <summary>
+    /// Presses the shutter button halfway to focus, then releases it.
     /// </summary>
     public async Task AutoFocus()
     {
-        await InitializeAsync();
-        await _takePictureSemaphore.WaitAsync();
+        await _shutterLock.WaitAsync();
 
         try
         {
-            _takePictureCompletion = new TaskCompletionSource<byte[]>();
+            await RunWithBusyRetryAsync(camera =>
+                EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Halfway)
+                    .ThrowIfEdSdkError("Could not send AF command"));
 
-            await _thread.InvokeAsync(() =>
+            try
             {
-                EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Halfway).ThrowIfEdSdkError("Could not send AF command");
-                Thread.Sleep(100); 
-                EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF).ThrowIfEdSdkError("Could not send shutter release command");
-            });
+                // The halfway state is kept until released: leave the camera time to focus.
+                await Task.Delay(Math.Max(0, _options.AutoFocusHoldMilliseconds));
+            }
+            finally
+            {
+                await ReleaseShutterButtonAsync();
+            }
         }
         finally
         {
-            _takePictureSemaphore.Release();
+            _shutterLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Releases the shutter button, retrying while the camera is busy. Never throws: a failure is logged.
+    /// </summary>
+    private async Task ReleaseShutterButtonAsync()
+    {
+        var attempts = Math.Max(5, _options.BusyRetryCount);
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                await RunAsync(camera =>
+                    EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF)
+                        .ThrowIfEdSdkError("Could not release the shutter button"));
+                return;
+            }
+            catch (EdsException e) when (e.IsBusy && attempt < attempts)
+            {
+                await Task.Delay(_options.BusyRetryDelayMilliseconds);
+            }
+            catch (Exception e)
+            {
+                _logger?.LogError(e, "Could not release the shutter button");
+                return;
+            }
         }
     }
 
     /// <summary>
     /// Takes a picture with the camera, optionally using autofocus.
     /// </summary>
-    /// <param name="useAutoFocus"></param>
-    /// <returns></returns>
-    /// <exception cref="TimeoutException"></exception>
-    public async Task<byte[]?> TakePicture(bool useAutoFocus = true)
+    /// <returns>The bytes of the captured file.</returns>
+    public async Task<byte[]?> TakePicture(bool useAutoFocus = true) => (await TakePictureAsync(useAutoFocus)).Data;
+
+    /// <summary>
+    /// Takes a picture and returns the first downloaded file matching <paramref name="fileTypes"/>
+    /// (default: <see cref="CanonCameraOptions.CaptureFileTypes"/>).
+    /// </summary>
+    /// <exception cref="TimeoutException">The camera did not deliver a matching file in time.</exception>
+    /// <exception cref="CaptureFailedException">The camera reported a capture failure.</exception>
+    public async Task<CapturedImage> TakePictureAsync(bool useAutoFocus = true, IEnumerable<string>? fileTypes = null, CancellationToken cancellationToken = default)
     {
-        await InitializeAsync();
-        await _takePictureSemaphore.WaitAsync();
+        var acceptedTypes = CaptureFileTypes.Normalize(fileTypes);
+        if (acceptedTypes.Count == 0)
+            acceptedTypes = _defaultFileTypes;
+
+        await ConnectAsync();
+        await _shutterLock.WaitAsync(cancellationToken);
 
         try
         {
-            _takePictureCompletion = new TaskCompletionSource<byte[]>();
+            await WaitForPendingTransfersAsync(cancellationToken);
 
-            await _thread.InvokeAsync(() =>
-            {
-                if (useAutoFocus)
-                {
-                    EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_TakePicture, 0).ThrowIfEdSdkError("Could not take picture with AF");
-                }
-                else
-                {
-                    EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely_NonAF).ThrowIfEdSdkError("Could not send Non-AF capture command");
-                    Thread.Sleep(100);
-                    EDSDK.EdsSendCommand(_cameraRef, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF).ThrowIfEdSdkError("Could not send shutter release command");
-                }
-            });
+            // The setting may have been changed on the camera, and the SDK does not report it: set it again.
+            if (_options.ForceFlashFiring)
+                await RunAsync(camera => TrySetFlashFiring(camera, true));
+
+            var timeout = await GetCaptureTimeout();
+            var pending = new PendingCapture(acceptedTypes);
+            _pendingCapture = pending;
+            _capturing = true;
 
             try
             {
-                // Wait for OnCameraObject or OnCameraStateChanged to complete the task
-                return await _takePictureCompletion.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                var button = useAutoFocus
+                    ? EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely
+                    : EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely_NonAF;
+
+                // Press then release the shutter button (EDSDK API reference, sample 9).
+                // Only the press is retried while the camera is busy: once it succeeded it is never sent again,
+                // and the button is always released, even when the press failed.
+                try
+                {
+                    await RunWithBusyRetryAsync(camera =>
+                        EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button)
+                            .ThrowIfEdSdkError("Could not press the shutter button"), cancellationToken);
+                }
+                finally
+                {
+                    await ReleaseShutterButtonAsync();
+                }
+
+                return await pending.Completion.Task.WaitAsync(timeout, cancellationToken);
             }
             catch (TimeoutException)
             {
-                // Invalidate the TCS so the late event doesn't complete a *future* request
-                _takePictureCompletion = null; 
-                
-                // We can also add a better message, as you wanted
-                throw new TimeoutException("Picture taking operation timed out. The camera did not respond. Check focus, lens cap, or if it's set to RAW.");
-            }
-        }
-        finally
-        {
-            _takePictureSemaphore.Release();
-        }
-    }
-
-    /// <summary>
-    /// Gets the live view image from the camera.
-    /// </summary>
-    public async Task<byte[]?> GetLiveView()
-    {
-        await InitializeAsync();
-
-        // Try to acquire the semaphore with a 0ms timeout.
-        if (!await _takePictureSemaphore.WaitAsync(0))
-        {
-            // If this fails, TakePicture is busy. Skip this frame.
-            return null;
-        }
-
-        try
-        {
-            return await _thread.InvokeAsync(() =>
-            {
-                var evfImage = nint.Zero;
-                var stream = nint.Zero;
-
-                try
-                {
-                    // 1. Create Stream
-                    EDSDK.EdsCreateMemoryStream(0, out stream).ThrowIfEdSdkError("Could not create memory stream for EVF image");
-                    if (stream == nint.Zero) throw new EdsException(0, "EdsCreateMemoryStream returned OK but stream was null.", null);
-
-                    // 2. Create Image Ref
-                    EDSDK.EdsCreateEvfImageRef(stream, out evfImage).ThrowIfEdSdkError("Could not create EVF image reference");
-                    if (evfImage == nint.Zero) throw new EdsException(0, "EdsCreateEvfImageRef returned OK but image ref was null.", null);
-                    
-                    // 3. Download Image
-                    var err = EDSDK.EdsDownloadEvfImage(_cameraRef, evfImage);
-                    if (err == EDSDK.EDS_ERR_OBJECT_NOTREADY)
-                    {
-                        return null; // Not an error, just not ready for a frame
-                    }
-                    err.ThrowIfEdSdkError("Could not download EVF image"); // Throws on other errors
-
-                    // 4. Get Pointer (Defensive Check 1)
-                    // This is the area where the NullReferenceException was happening
-                    var ptrErr = EDSDK.EdsGetPointer(stream, out var imagePtr);
-                    if (ptrErr != EDSDK.EDS_ERR_OK || imagePtr == nint.Zero)
-                    {
-                        // Camera said download was OK, but the stream pointer is bad.
-                        // This happens when the camera is in a bad state. Skip the frame.
-                        return null; 
-                    }
-
-                    // 5. Get Length (Defensive Check 2)
-                    var lenErr = EDSDK.EdsGetLength(stream, out var length);
-                    if (lenErr != EDSDK.EDS_ERR_OK || length == 0)
-                    {
-                        // Stream is bad or empty, skip frame
-                        return null;
-                    }
-
-                    // 6. Copy bytes
-                    var bytes = new byte[length];
-                    Marshal.Copy(imagePtr, bytes, 0, (int)length);
-                    return bytes;
-                }
-                finally
-                {
-                    // This release code is correct and essential
-                    if (stream != nint.Zero) EDSDK.EdsRelease(stream);
-                    if (evfImage != nint.Zero) EDSDK.EdsRelease(evfImage);
-                }
-            });
-        }
-        finally
-        {
-            // Always release the semaphore so the next operation can run
-            _takePictureSemaphore.Release();
-        }
-    }
-
-    /// <summary>
-    /// Handles camera object events, such as file transfers. 
-    /// </summary>
-    private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
-    {
-        // This event is triggered when an image is ready to be downloaded
-        if (inEvent == EDSDK.ObjectEvent_DirItemRequestTransfer)
-        {
-            try
-            {
-                EDSDK.EdsGetDirectoryItemInfo(inRef, out var dirItemInfo).ThrowIfEdSdkError("Failed to get file info");
-
-                // We only care about JPGs for the TakePicture preview
-                if (Path.GetExtension(dirItemInfo.szFileName).ToLower() is not (".jpg" or ".jpeg"))
-                {
-                    // This wasn't the image we wanted, just complete the download and ignore
-                    EDSDK.EdsDownloadComplete(inRef).ThrowIfEdSdkError("Failed to complete non-JPG download");
-                    return 0;
-                }
-
-                var tempFileName = $"{Path.GetTempFileName()}.jpg";
-                EDSDK.EdsCreateFileStream(tempFileName, EDSDK.EdsFileCreateDisposition.CreateAlways, EDSDK.EdsAccess.ReadWrite, out var stream).ThrowIfEdSdkError("Failed to create download stream");
-
-                try
-                {
-                    try
-                    {
-                        EDSDK.EdsDownload(inRef, dirItemInfo.Size, stream).ThrowIfEdSdkError($"Failed to download file: {dirItemInfo.szFileName}");
-                        EDSDK.EdsSetProgressCallback(stream, _onCameraProgress, EDSDK.EdsProgressOption.Periodically, stream).ThrowIfEdSdkError("Failed to register download progress");
-                        EDSDK.EdsDownloadComplete(inRef).ThrowIfEdSdkError("Failed to complete download");
-                    }
-                    finally
-                    {
-                        EDSDK.EdsRelease(stream);
-                    }
-
-                    var bytes = File.ReadAllBytes(tempFileName);
-                    
-                    try
-                    {
-                        File.Delete(tempFileName);
-                    }
-                    catch
-                    {
-                        // Ignore temp file deletion errors
-                    }
- 
-                    _latestImageBytes = bytes;
-                    
-                    // Use TrySetResult for race-condition safety
-                    _takePictureCompletion?.TrySetResult(bytes);
-                }
-                catch (Exception exception)
-                {
-                    _takePictureCompletion?.TrySetException(exception);
-                }
-                finally
-                {
-                    // Clear the TCS now that this transfer is handled (success or fail)
-                    _takePictureCompletion = null;
-                }
+                _staleTransfers = true;
+                throw new TimeoutException(
+                    $"The camera did not deliver a picture within {timeout.TotalSeconds:0.#} s. " +
+                    $"Check the focus and that the image quality set on the camera produces one of these file types: {string.Join(", ", acceptedTypes)}.");
             }
             finally
             {
-                // Always release the event reference
-                if (inRef != nint.Zero) 
-                    EDSDK.EdsRelease(inRef);
+                _pendingCapture = null;
+                _capturing = false;
             }
         }
-        else if (inRef != nint.Zero) 
+        finally
         {
-            // Release other events we don't care about
-            EDSDK.EdsRelease(inRef);
+            _shutterLock.Release();
         }
-
-        return 0;
     }
 
     /// <summary>
-    /// Releases all resources used by the Canon camera instance. 
+    /// Waits (a few seconds at most) until the camera has transferred the files of previous shots,
+    /// so they cannot be taken for the file of the next capture.
+    /// </summary>
+    private async Task WaitForPendingTransfersAsync(CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+
+        while ((_transferJobPending || _staleTransfers) && DateTime.UtcNow < deadline)
+            await Task.Delay(50, cancellationToken);
+
+        // The camera may not report its job status: do not block the next captures forever.
+        _staleTransfers = false;
+    }
+
+    /// <summary>
+    /// Capture timeout: <see cref="CanonCameraOptions.CaptureTimeoutSeconds"/> plus the exposure time of the current shutter speed.
+    /// </summary>
+    private async Task<TimeSpan> GetCaptureTimeout()
+    {
+        var timeout = TimeSpan.FromSeconds(Math.Max(1, _options.CaptureTimeoutSeconds));
+
+        try
+        {
+            var tv = await RunAsync(camera => EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Tv, 0, out uint value) == EDSDK.EDS_ERR_OK ? value : (uint?)null);
+
+            if (tv.HasValue && EdsdkHelper.TryGetExposureSeconds(tv.Value, out var seconds))
+                timeout += TimeSpan.FromSeconds(seconds);
+        }
+        catch (EdsException e) when (!e.IsDisconnected)
+        {
+            _logger?.LogDebug(e, "Could not read the shutter speed, using the default capture timeout");
+        }
+
+        return timeout;
+    }
+
+    #endregion
+
+    #region Flash
+
+    /// <summary>
+    /// Creates the flash settings object and, if configured, sets flash firing to Fire. Runs on the Canon thread.
+    /// </summary>
+    private void InitializeFlash(nint camera)
+    {
+        var err = EDSDK.EdsCreateFlashSettingRef(camera, out var flashRef);
+        if (err != EDSDK.EDS_ERR_OK || flashRef == nint.Zero)
+        {
+            _flashError = $"Flash settings not available: {EdsdkHelper.GetErrorMessage(err)}";
+            _logger?.LogInformation("{Error}", _flashError);
+            return;
+        }
+
+        _flashRef = flashRef;
+        _flashError = null;
+
+        if (_options.ForceFlashFiring)
+            TrySetFlashFiring(camera, true);
+    }
+
+    /// <summary>
+    /// Sets flash firing without throwing; a failure is logged and reported in <see cref="GetFlashStatus"/>.
+    /// </summary>
+    private void TrySetFlashFiring(nint camera, bool firing)
+    {
+        try
+        {
+            SetFlashFiringCore(camera, firing);
+        }
+        catch (EdsException e)
+        {
+            _logger?.LogWarning("Could not set flash firing to {Firing}: {Message}", firing ? "Fire" : "Off", e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Sets kEdsPropID_Flash_Target then kEdsPropID_Flash_Firing (EDSDK API reference 6.32).
+    /// The camera UI must be locked while the flash properties are set.
+    /// </summary>
+    private void SetFlashFiringCore(nint camera, bool firing)
+    {
+        try
+        {
+            if (_flashRef == nint.Zero)
+                throw new EdsException(EDSDK.EDS_ERR_NOT_SUPPORTED, _flashError ?? "Flash settings not available");
+
+            var target = string.Equals(_options.FlashTarget, "External", StringComparison.OrdinalIgnoreCase) ? 1u : 0u;
+
+            EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UILock, 1).ThrowIfEdSdkError("Could not lock the camera UI");
+
+            try
+            {
+                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Target, 0, sizeof(uint), target)
+                    .ThrowIfEdSdkError("Could not set the flash target");
+                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, sizeof(uint), firing ? 1u : 0u)
+                    .ThrowIfEdSdkError("Could not set flash firing (the camera must be in P, Tv, Av or M)");
+            }
+            finally
+            {
+                EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UIUnLock, 0);
+            }
+
+            _flashFiring = firing;
+            _flashError = null;
+        }
+        catch (EdsException e)
+        {
+            _flashError = e.Message;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets the state of the "flash firing" setting, as last set by the API.
+    /// </summary>
+    public Task<FlashStatus> GetFlashStatus() => RunAsync(_ =>
+    {
+        var firing = _flashFiring;
+
+        // The SDK only returns a value once it has been set remotely (EDSDK API reference 6.32.2).
+        if (firing.HasValue && _flashRef != nint.Zero
+            && EDSDK.EdsGetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, out uint value) == EDSDK.EDS_ERR_OK)
+            firing = value != 0;
+
+        return new FlashStatus(_flashRef != nint.Zero, firing, _options.ForceFlashFiring, _flashError);
+    });
+
+    /// <summary>
+    /// Sets the "flash firing" camera setting (Fire or Off).
+    /// With <see cref="CanonCameraOptions.ForceFlashFiring"/>, it is set back to Fire before the next capture.
+    /// </summary>
+    public Task SetFlashFiringAsync(bool firing) => RunWithBusyRetryAsync(camera => SetFlashFiringCore(camera, firing));
+
+    #endregion
+
+    #region Live view
+
+    /// <summary>
+    /// Starts streaming the live view to the PC (EDSDK API reference, sample 10).
+    /// </summary>
+    public Task StartLiveViewAsync()
+    {
+        _liveViewRequested = true;
+
+        return RunWithBusyRetryAsync(camera =>
+        {
+            if (_liveViewActive)
+                return;
+
+            // Live view cannot start when it is disabled in the camera settings.
+            if (EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, out uint evfMode) == EDSDK.EDS_ERR_OK && evfMode == 0)
+                EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, sizeof(uint), 1u).ThrowIfEdSdkError("Could not enable live view");
+
+            EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device);
+
+            var pcOutput = _options.LiveViewSmallImage ? EDSDK.EvfOutputDevice_PC_Small : EDSDK.EvfOutputDevice_PC;
+            device = _options.KeepCameraScreenOn ? device | pcOutput : pcOutput;
+
+            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not start live view");
+            _liveViewActive = true;
+            _logger?.LogInformation("Live view started");
+        });
+    }
+
+    /// <summary>
+    /// Stops streaming the live view to the PC, which gives the camera back its screen and saves power.
+    /// </summary>
+    public async Task StopLiveViewAsync()
+    {
+        _liveViewRequested = false;
+
+        if (!_connected)
+            return;
+
+        await RunWithBusyRetryAsync(camera =>
+        {
+            if (!_liveViewActive)
+                return;
+
+            StopLiveViewCore(camera);
+        });
+    }
+
+    private void StopLiveViewCore(nint camera)
+    {
+        if (EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device) == EDSDK.EDS_ERR_OK)
+        {
+            device &= ~(EDSDK.EvfOutputDevice_PC | EDSDK.EvfOutputDevice_PC_Small);
+            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not stop live view");
+        }
+
+        _liveViewActive = false;
+        _logger?.LogInformation("Live view stopped");
+    }
+
+    /// <summary>
+    /// Gets the current live view image (JPEG), starting the live view if needed.
+    /// Returns null when no frame is available yet, or while a picture is being taken.
+    /// </summary>
+    public async Task<byte[]?> GetLiveView()
+    {
+        if (_capturing)
+            return null;
+
+        if (!_liveViewActive)
+            await StartLiveViewAsync();
+
+        return await RunAsync(camera =>
+        {
+            if (_capturing)
+                return null;
+
+            var evfImage = nint.Zero;
+            var stream = nint.Zero;
+
+            try
+            {
+                EDSDK.EdsCreateMemoryStream(0, out stream).ThrowIfEdSdkError("Could not create memory stream for EVF image");
+                EDSDK.EdsCreateEvfImageRef(stream, out evfImage).ThrowIfEdSdkError("Could not create EVF image reference");
+
+                var err = EDSDK.EdsDownloadEvfImage(camera, evfImage);
+
+                // No frame yet (live view starting) or camera busy: not an error, skip the frame.
+                if (err is EDSDK.EDS_ERR_OBJECT_NOTREADY or EDSDK.EDS_ERR_DEVICE_BUSY or EDSDK.EDS_ERR_PTP_DEVICE_BUSY)
+                    return null;
+
+                err.ThrowIfEdSdkError("Could not download EVF image");
+
+                var bytes = CopyStream(stream);
+                return bytes.Length > 0 ? bytes : null;
+            }
+            finally
+            {
+                if (evfImage != nint.Zero) EDSDK.EdsRelease(evfImage);
+                if (stream != nint.Zero) EDSDK.EdsRelease(stream);
+            }
+        });
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Stops the live view, closes the session and terminates the SDK.
     /// </summary>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        try
+        {
+            var cleanup = _thread.InvokeAsync(() =>
+            {
+                if (_cameraRef != nint.Zero && _liveViewActive)
+                {
+                    try
+                    {
+                        StopLiveViewCore(_cameraRef);
+                    }
+                    catch (Exception e)
+                    {
+                        _logger?.LogWarning(e, "Could not stop live view");
+                    }
+                }
+
+                DisconnectCore("application stopping");
+
+                if (_sdkInitialized)
+                {
+                    EDSDK.EdsTerminateSDK();
+                    _sdkInitialized = false;
+                }
+            });
+
+            if (!cleanup.Wait(TimeSpan.FromSeconds(5)))
+                _logger?.LogWarning("Timed out while closing the camera session");
+        }
+        catch (Exception e)
+        {
+            _logger?.LogWarning(e, "Error while closing the camera session");
+        }
+
+        // _shutterLock is not disposed: an operation still in flight releases it in its finally block.
         _thread.Dispose();
     }
 }

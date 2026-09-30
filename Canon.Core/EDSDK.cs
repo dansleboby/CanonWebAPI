@@ -205,6 +205,60 @@ internal class EDSDK
     public const uint PropID_MovieHFRSetting = 0x0100045d;
     public const uint PropID_FocusShiftSetting = 0x01000457;
 
+    /*----------------------------------
+     Properties added up to EDSDK 13.20.21
+    ----------------------------------*/
+    public const uint PropID_AFEyeDetect = 0x01000455;
+    public const uint PropID_AFTrackingObject = 0x01000468;
+    public const uint PropID_AfLockState = 0x00000480;
+    public const uint PropID_ApertureLockSetting = 0x01000476;
+    public const uint PropID_BrightnessSetting = 0x00000483;
+    public const uint PropID_ColorFilter = 0x0000047f;
+    public const uint PropID_ContinuousAfMode = 0x01000433;
+    public const uint PropID_DigitalZoomSetting = 0x00000477;
+    public const uint PropID_DriveFocusToEdge = 0x0100046d;
+    public const uint PropID_EVF_RollingPitching = 0x01000544;
+    public const uint PropID_Evf_FocalLength = 0x01000555;
+    public const uint PropID_Evf_Histogram = 0x0000050A;
+    public const uint PropID_Evf_ImageClipRect = 0x00000545;
+    public const uint PropID_Evf_PowerZoom_CurPosition = 0x00000550;
+    public const uint PropID_Evf_PowerZoom_MaxPosition = 0x00000551;
+    public const uint PropID_Evf_PowerZoom_MinPosition = 0x00000552;
+    public const uint PropID_Evf_ViewType = 0x01000513;
+    public const uint PropID_Flash_Firing = 0x0000200d;
+    public const uint PropID_Flash_Target = 0x0000201e;
+    public const uint PropID_FocusPosition = 0x0100046e;
+    public const uint PropID_HDDirectoryStructure = 0x00000020;
+    public const uint PropID_IBIS_HighResoShot = 0x000004e0;
+    public const uint PropID_LensIsSetting = 0x010004c0;
+    public const uint PropID_MovieFileNameClipNo = 0x000004e7;
+    public const uint PropID_MovieFileNameIndex = 0x000004e5;
+    public const uint PropID_MovieFileNameReelNo = 0x000004e6;
+    public const uint PropID_MovieFileNameUserDef = 0x000004e8;
+    public const uint PropID_MovieParamEx = 0x011004c6;
+    public const uint PropID_MovieRecVolume_Acc = 0x0100048b;
+    public const uint PropID_MovieRecVolume_ExtMic = 0x0100048a;
+    public const uint PropID_MovieRecVolume_IntMic = 0x01000489;
+    public const uint PropID_MovieServoAf = 0x0100043e;
+    public const uint PropID_PowerZoom_Speed = 0x00000444;
+    public const uint PropID_RegisterFocusEdge = 0x0100046c;
+    public const uint PropID_ScreenDimmerTime = 0x010004c1;
+    public const uint PropID_ScreenOffTime = 0x010004c2;
+    public const uint PropID_SlowFastMode = 0x010004c7;
+    public const uint PropID_StillFileNameSetting = 0x000004e1;
+    public const uint PropID_StillFileNameUserSet1 = 0x000004e2;
+    public const uint PropID_StillFileNameUserSet2 = 0x000004e3;
+    public const uint PropID_StillFolderName = 0x000004e4;
+    public const uint PropID_ViewfinderOffTime = 0x010004c3;
+
+    /*----------------------------------
+     Private properties that must be enabled before EdsOpenSession
+     (see "Enable Target Properties" in the EDSDK API reference, chapter 6)
+    ----------------------------------*/
+    public const uint PropID_EnablePrivateProperty = 0x01000000;
+    public const int EnablePrivateProperty_TempStatus = 0x14840DF1;
+    public const int EnablePrivateProperty_FixedMovie = 0x17AF25B1;
+
     #endregion
 
     #region Camera commands
@@ -227,6 +281,7 @@ internal class EDSDK
     public const uint CameraCommand_RequestRollPitchLevel = 0x00000109;
     public const uint CameraCommand_RequestSensorCleaning = 0x00000112;
     public const uint CameraCommand_SetModeDialDisable = 0x00000113;
+    public const uint CameraCommand_DrivePowerZoom = 0x0000010d;
 
     public enum EdsEvfAf : uint
     {
@@ -592,7 +647,9 @@ internal class EDSDK
     -----------------------------------------------------------------------------*/
     public const int EvfZoom_Fit = 1;
     public const int EvfZoom_x5 = 5;
+    public const int EvfZoom_x6 = 6;
     public const int EvfZoom_x10 = 10;
+    public const int EvfZoom_x15 = 15;
 
     public enum EdsEvfAFMode : uint
     {
@@ -601,8 +658,20 @@ internal class EDSDK
         Evf_AFMode_LiveFace = 2,
         Evf_AFMode_LiveMulti = 3,
         Evf_AFMode_LiveZone = 4,
+        Evf_AFMode_LiveSingleExpandCross = 5,
+        Evf_AFMode_LiveSingleExpandAround = 6,
+        Evf_AFMode_LiveZoneLargeH = 7,
+        Evf_AFMode_LiveZoneLargeV = 8,
         Evf_AFMode_LiveCatchAF = 9,
-        Evf_AFMode_LiveSpotAF = 10
+        Evf_AFMode_LiveSpotAF = 10,
+        Evf_AFMode_FlexibleZone1 = 11,
+        Evf_AFMode_FlexibleZone2 = 12,
+        Evf_AFMode_FlexibleZone3 = 13,
+        Evf_AFMode_WholeArea = 14,
+        Evf_AFMode_NoTraking_Spot = 15,
+        Evf_AFMode_NoTraking_1Point = 16,
+        Evf_AFMode_NoTraking_ExpandCross = 17,
+        Evf_AFMode_NoTraking_ExpandAround = 18
     }
 
     /*-----------------------------------------------------------------------------
@@ -821,6 +890,10 @@ internal class EDSDK
       see the description of EdsGetPropertyDesc). */
     public const uint PropertyEvent_PropertyDescChanged = 0x00000102;
 
+    /* Notifies of changes in the list of configurable values of properties
+      retrieved with EdsGetPropertyDescEx. */
+    public const uint PropertyEvent_PropertyDescExChanged = 0x00000110;
+
     /*----------------------------------
      Object Event
     ----------------------------------*/
@@ -960,6 +1033,8 @@ internal class EDSDK
     public const uint StateEvent_InternalError = 0x00000306;
 
     public const uint StateEvent_AfResult = 0x00000309;
+    public const uint StateEvent_BulbExposureTime = 0x00000310;
+    public const uint StateEvent_PowerZoomInfoChanged = 0x00000311;
 
     #endregion
     
@@ -2232,6 +2307,43 @@ internal class EDSDK
     [DllImport("EDSDK.dll")]
     public static extern uint EdsDownloadEvfImage(IntPtr inCameraRef, IntPtr outEvfImageRef);
 
+    /*-----------------------------------------------------------------------------
+    //
+    //  Function:   EdsGetPropertyDescEx
+    //
+    //  Description:
+    //      Same as EdsGetPropertyDesc, for properties with 64-bit values
+    //      (e.g. kEdsPropID_MovieParamEx). Added in EDSDK 13.19.0.
+    -----------------------------------------------------------------------------*/
+    [DllImport("EDSDK.dll")]
+    public static extern uint EdsGetPropertyDescEx(IntPtr inRef, uint inPropertyID,
+        out EdsPropertyDescEx outPropertyDesc);
+
+    /*-----------------------------------------------------------------------------
+    //
+    //  Function:   EdsGetCsdFileData / EdsSetCsdFileData
+    //
+    //  Description:
+    //      Downloads / writes the camera settings file of a remote camera.
+    //      Added in EDSDK 13.20.11.
+    -----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------------
+    //
+    //  Function:   EdsCreateFlashSettingRef
+    //
+    //  Description:
+    //      Creates the object used to get and set flash-related settings
+    //      (kEdsPropID_Flash_Target, kEdsPropID_Flash_Firing). Added in EDSDK 13.19.0.
+    -----------------------------------------------------------------------------*/
+    [DllImport("EDSDK.dll")]
+    public static extern uint EdsCreateFlashSettingRef(IntPtr inCameraRef, out IntPtr outFlashRef);
+
+    [DllImport("EDSDK.dll")]
+    public static extern uint EdsGetCsdFileData(IntPtr inCameraRef, IntPtr outStream);
+
+    [DllImport("EDSDK.dll")]
+    public static extern uint EdsSetCsdFileData(IntPtr inCameraRef, int inDataSize, IntPtr inDataValue);
+
     #endregion
     
     #region Definition of base Structures
@@ -2384,6 +2496,17 @@ internal class EDSDK
     /*-----------------------------------------------------------------------------
      Property Desc
     -----------------------------------------------------------------------------*/
+    [StructLayout(LayoutKind.Sequential)]
+    public struct EdsPropertyDescEx
+    {
+        public int Form;
+        public int Access;
+        public int NumElements;
+
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2048)]
+        public long[] PropDesc;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct EdsPropertyDesc
     {
@@ -2634,6 +2757,9 @@ internal class EDSDK
     public const uint EDS_ERR_NO_VALID_OBJECTINFO = 0x00002015;
     public const uint EDS_ERR_INVALID_CODE_FORMAT = 0x00002016;
     public const uint EDS_ERR_UNKNOWN_VENDER_CODE = 0x00002017;
+    public const uint EDS_ERR_UNKNOWN_VENDOR_CODE = 0x00002017;
+    public const uint EDS_ERR_PTP_DEVICE_BUSY = 0x00002019;
+    public const uint EDS_ERR_NOT_CAMERA_SUPPORT_SDK_VERSION = 0x00002021;
     public const uint EDS_ERR_CAPTURE_ALREADY_TERMINATED = 0x00002018;
     public const uint EDS_ERR_INVALID_PARENTOBJECT = 0x0000201A;
     public const uint EDS_ERR_INVALID_DEVICEPROP_FORMAT = 0x0000201B;
@@ -2646,6 +2772,8 @@ internal class EDSDK
     public const uint EDS_ERR_LENS_COVER_CLOSE = 0x0000A006;
     public const uint EDS_ERR_LOW_BATTERY = 0x0000A101;
     public const uint EDS_ERR_OBJECT_NOTREADY = 0x0000A102;
+    public const uint EDS_ERR_CANNOT_MAKE_OBJECT = 0x0000A104;
+    public const uint EDS_ERR_MEMORYSTATUS_NOTREADY = 0x0000A106;
 
     /* Capture Error */
     public const uint EDS_ERR_TAKE_PICTURE_AF_NG = 0x00008D01;
@@ -2656,6 +2784,13 @@ internal class EDSDK
     public const uint EDS_ERR_TAKE_PICTURE_NO_CARD_NG = 0x00008D06;
     public const uint EDS_ERR_TAKE_PICTURE_CARD_NG = 0x00008D07;
     public const uint EDS_ERR_TAKE_PICTURE_CARD_PROTECT_NG = 0x00008D08;
+    public const uint EDS_ERR_TAKE_PICTURE_MOVIE_CROP_NG = 0x00008D09;
+    public const uint EDS_ERR_TAKE_PICTURE_STROBO_CHARGE_NG = 0x00008D0A;
+    public const uint EDS_ERR_TAKE_PICTURE_NO_LENS_NG = 0x00008D0B;
+    public const uint EDS_ERR_TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG = 0x00008D0C;
+    public const uint EDS_ERR_TAKE_PICTURE_LV_REL_PROHIBIT_MODE_NG = 0x00008D0D;
+    public const uint EDS_ERR_TAKE_PICTURE_MOVIE_MODE_NG = 0x00008D0E;
+    public const uint EDS_ERR_TAKE_PICTURE_RETRUCTED_LENS_NG = 0x00008D0F;
 
 
     public const uint EDS_ERR_LAST_GENERIC_ERROR_PLUS_ONE = 0x000000F5;
