@@ -18,7 +18,7 @@ public static class ServiceCollectionExtensions
                 document.Info.Title = "Canon Web API";
                 document.Info.Version = version?.ToString(3) ?? "1.0.0";
                 document.Info.Description = "Remote control of a Canon camera through the Canon EDSDK: settings, capture and MJPEG live view. " +
-                                            "Errors are returned as problem details: 400 invalid value, 409 capture refused by the camera, " +
+                                            "Errors are returned as problem details: 400 invalid value, 409 capture refused by the camera or setting not changeable in the current shooting mode, " +
                                             "503 camera not connected or busy, 504 capture timeout.";
                 return Task.CompletedTask;
             });

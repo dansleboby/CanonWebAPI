@@ -68,6 +68,8 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/flash`                     | Gets the "flash firing" setting as last set by the API (a change made in the camera menu is not reported by the SDK). | N/A |
 | POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. | `"fire"` or `"off"` |
+| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: can be changed in the current shooting mode). | N/A |
+| POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged. | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "whiteBalance": "Daylight" }` |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
 | POST   | `/iso`                       | Sets the ISO speed.                                     | `"100"`                |
 | GET    | `/aperture`                  | Gets the current aperture and a list of supported values. | N/A                    |
@@ -75,7 +77,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/shutterspeed`              | Gets the current shutter speed and a list of supported values. | N/A                    |
 | POST   | `/shutterspeed`              | Sets the shutter speed.                                 | `"1/125"`              |
 | GET    | `/exposure`                  | Gets the current exposure compensation and supported values. | N/A                    |
-| POST   | `/exposure`                  | Sets the exposure compensation (not available in manual mode). | `"+1/3"`         |
+| POST   | `/exposure`                  | Sets the exposure compensation (not available in M, nor in the basic zone modes). | `"+1/3"`         |
 | GET    | `/whitebalance`              | Gets the current white balance and supported values.    | N/A                    |
 | POST   | `/whitebalance`              | Sets the white balance.                                 | `"Auto"`               |
 | POST   | `/takepicture`               | Takes a picture and returns the file (JPEG by default). Query parameters: `useAutoFocus` (default `true`), `fileTypes` (e.g. `cr3`, `jpg,cr3`, `*`). The file name is in the `X-File-Name` header. | N/A |
@@ -92,11 +94,42 @@ Errors are returned as [problem details](https://www.rfc-editor.org/rfc/rfc9457)
 
 | Status | Meaning |
 |--------|---------|
-| 400    | Invalid value, or value not accepted by the camera now (the message lists the accepted values). |
+| 400    | Invalid value, or value not accepted by the camera now (`acceptedValues` lists the accepted values). |
 | 404    | No picture / live view image available. |
-| 409    | The camera refused to take the picture (focus failure, no lens, movie mode...). |
+| 409    | The camera refused to take the picture (focus failure, no lens, movie mode...), or the setting cannot be changed in the current shooting mode. |
 | 503    | Camera not connected, or busy (`Retry-After` header). |
 | 504    | The camera did not deliver the picture in time. |
+
+#### Setting errors
+
+`POST /settings` and the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) check the value before writing it
+and answer with the same machine readable problem details:
+
+| Status | `reason` | Meaning |
+|--------|----------|---------|
+| 400    | `invalid-value` | The label cannot be read (e.g. `"1/7"`, `"f/5.6"`). |
+| 400    | `value-not-accepted` | The camera does not accept this value now (lens, exposure step...). |
+| 409    | `not-settable-in-mode` | The setting cannot be changed in the current shooting mode. |
+
+Extensions: `reason`, `property` (`iso`, `aperture`, `shutterSpeed`, `exposureCompensation`, `whiteBalance`), `acceptedValues`,
+`aeMode`, `aeModeCode`, and `errors`: every refused setting (`property`, `value`, `reason`, `acceptedValues`, `detail`).
+With `POST /settings`, nothing is written when a value is refused; when several are, the status is 409 if one of them
+cannot be changed in the current mode (the top level fields then describe that one), 400 otherwise.
+
+Settings that can be changed in each mode (other modes: none, the camera chooses by itself):
+
+| Mode | ISO | Aperture | Shutter speed | Exposure compensation | White balance |
+|------|-----|----------|---------------|-----------------------|---------------|
+| P, A-DEP | ✓ | | | ✓ | ✓ |
+| Tv | ✓ | | ✓ | ✓ | ✓ |
+| Av | ✓ | ✓ | | ✓ | ✓ |
+| M | ✓ | ✓ | ✓ | | ✓ |
+| Bulb | ✓ | ✓ | | | ✓ |
+| Fv | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+If the camera refuses a value while `POST /settings` writes it, the problem details list the settings already written in
+`applied` and the one that failed in `failed` (`property`, `value`, `detail`, `errorCode`); the status follows the camera error
+(e.g. 503 when busy or disconnected).
 
 ## Configuration
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "Canon Web API",
-    "description": "Remote control of a Canon camera through the Canon EDSDK: settings, capture and MJPEG live view. Errors are returned as problem details: 400 invalid value, 409 capture refused by the camera, 503 camera not connected or busy, 504 capture timeout.",
+    "description": "Remote control of a Canon camera through the Canon EDSDK: settings, capture and MJPEG live view. Errors are returned as problem details: 400 invalid value, 409 capture refused by the camera or setting not changeable in the current shooting mode, 503 camera not connected or busy, 504 capture timeout.",
     "version": "1.2.0"
   },
   "paths": {
@@ -279,6 +279,126 @@
         }
       }
     },
+    "/settings": {
+      "get": {
+        "tags": [
+          "Canon"
+        ],
+        "summary": "Shooting mode, ISO, aperture, shutter speed and white balance in one call",
+        "description": "For each setting: current value, values the camera accepts now, and whether it can be changed in the current shooting mode (settable).",
+        "responses": {
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraSettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Canon"
+        ],
+        "summary": "Apply several settings at once (e.g. a day / night preset)",
+        "description": "Every value is checked before anything is written; when one is refused nothing is written and the problem details list every refused setting in 'errors' (property, value, reason, acceptedValues, detail). 409 when one of them cannot be changed in the current shooting mode, 400 otherwise. Values are then written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. If a write fails, the problem details list the settings already written in 'applied' and the one that failed in 'failed'. On success, returns the settings read back from the camera, as GET /settings.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraSettingsRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraSettingsRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/iso": {
       "get": {
         "tags": [
@@ -323,6 +443,7 @@
           "Canon"
         ],
         "summary": "Set the ISO speed (e.g. \"Auto\", \"400\")",
+        "description": "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -369,6 +490,16 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -424,6 +555,7 @@
           "Canon"
         ],
         "summary": "Set the aperture (e.g. \"5.6\")",
+        "description": "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -470,6 +602,16 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -525,6 +667,7 @@
           "Canon"
         ],
         "summary": "Set the shutter speed (e.g. \"1/125\", \"2\\\"\")",
+        "description": "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -571,6 +714,16 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -626,7 +779,7 @@
           "Canon"
         ],
         "summary": "Set the exposure compensation (e.g. \"0\", \"+1/3\", \"-1 2/3\")",
-        "description": "Not available in manual exposure mode.",
+        "description": "Not available in manual exposure mode, nor in the basic zone modes. Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -673,6 +826,16 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -728,6 +891,7 @@
           "Canon"
         ],
         "summary": "Set the white balance (e.g. \"Auto\", \"Daylight\")",
+        "description": "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -774,6 +938,16 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1080,6 +1254,88 @@
               "null",
               "boolean"
             ]
+          }
+        }
+      },
+      "CameraSettingState": {
+        "required": [
+          "value",
+          "supportedValues",
+          "settable"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "supportedValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CameraSettings": {
+        "required": [
+          "mode",
+          "iso",
+          "aperture",
+          "shutterSpeed",
+          "whiteBalance"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/CameraMode"
+          },
+          "iso": {
+            "$ref": "#/components/schemas/CameraSettingState"
+          },
+          "aperture": {
+            "$ref": "#/components/schemas/CameraSettingState"
+          },
+          "shutterSpeed": {
+            "$ref": "#/components/schemas/CameraSettingState"
+          },
+          "whiteBalance": {
+            "$ref": "#/components/schemas/CameraSettingState"
+          }
+        }
+      },
+      "CameraSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "iso": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null
+          },
+          "aperture": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null
+          },
+          "shutterSpeed": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null
+          },
+          "whiteBalance": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null
           }
         }
       },

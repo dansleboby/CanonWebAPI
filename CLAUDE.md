@@ -71,6 +71,7 @@ dotnet clean CanonSDK.sln
 
 The Canon.API project exposes these REST endpoints (OpenAPI at `/openapi/v1.json`, Swagger UI at `/swagger`, copy in `docs/openapi.json`):
 - GET/POST `/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance` - Camera settings
+- GET/POST `/settings` - Mode + iso/aperture/shutterSpeed/whiteBalance in one call; POST validates everything before writing
 - POST `/takepicture` - Capture image (`useAutoFocus`, `fileTypes`; JPEG only by default)
 - GET `/videostream` - MJPEG live view stream (shared by all clients)
 - GET `/liveview` - Single live view frame
@@ -79,7 +80,7 @@ The Canon.API project exposes these REST endpoints (OpenAPI at `/openapi/v1.json
 - GET `/cameraname`, `/mode`, `/temperature`, `/status` - Camera information
 - GET/POST `/flash` - "Flash firing" setting (forced to Fire before each capture by default)
 
-Errors are problem details: 400 invalid value, 409 capture refused, 503 not connected/busy, 504 capture timeout.
+Errors are problem details: 400 invalid value, 409 capture refused or setting locked by the shooting mode, 503 not connected/busy, 504 capture timeout.
 
 ## Important Notes
 
@@ -119,6 +120,7 @@ The project uses GitHub Actions for automated releases (record every change in t
 - Live view is started with `Evf_OutputDevice` and stopped when no client uses it
 - "Device busy" answers are retried after ~500 ms, as in the Canon samples; only the shutter press is retried, the release is always sent
 - Flash (`EdsCreateFlashSettingRef`, `Flash_Target`, `Flash_Firing`): the UI must be locked while setting it; the SDK only reports values set remotely, so the setting is forced before each capture (studio flash on the shoe in the photo booth)
+- Settings: `CameraSettingRules` (pure, tested) decides what is settable per AE mode; EdsGetPropertyDesc only gives the accepted values (its `form`/`access` fields are reserved, always 0)
 - Memory management critical due to unmanaged EDSDK resources: release every ref (`EdsRelease`)
 
 ## Testing

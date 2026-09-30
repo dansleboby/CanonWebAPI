@@ -7,6 +7,22 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+### Added
+- `GET /settings`: shooting mode, plus ISO, aperture, shutter speed and white balance in one call, each with its value,
+  the values the camera accepts now and whether it can be changed in the current shooting mode (`settable`).
+- `POST /settings`: applies several settings at once (e.g. a day / night preset). Every value is checked before anything
+  is written; they are then written in a fixed order, never during a capture, and the settings read back from the camera
+  are returned. A write failure lists the settings already written (`applied`) and the one that failed (`failed`).
+
+### Changed
+- **Setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) check that the setting can be changed in the
+  current shooting mode**: 409 with reason `not-settable-in-mode` (e.g. shutter speed in Av, anything in a scene mode,
+  exposure compensation in M). The camera used to be asked anyway, answering 400, 409 or 500 depending on the SDK error.
+- Setting errors are machine readable: `reason` (`invalid-value`, `value-not-accepted`, `not-settable-in-mode`), `property`,
+  `acceptedValues`, `aeMode`, `aeModeCode` and `errors` in the problem details (the accepted values used to be only in the message).
+- Setting a value waits for a capture or an autofocus in progress to finish.
+- `GET /whitebalance` returns an empty `supportedValues` instead of failing when the camera does not list the white balance values.
+
 ## [1.2.0.0] - 2026-09-30
 
 ### Changed

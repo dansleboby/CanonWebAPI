@@ -567,58 +567,144 @@ public sealed class CanonCamera : IDisposable
     });
 
     /// <summary>
-    /// Gets the values that can currently be set for a specific camera property.
+    /// Gets the values that can currently be set for a specific camera property (empty when the camera does not list them).
     /// </summary>
     public Task<List<string>> GetSupportedValues(CameraProperty property) => RunAsync(camera =>
-        GetSettableValues(camera, property)
+        (GetSettableValues(camera, property) ?? [])
             .Select(value => ((uint)property).DescribeValue(value))
             .ToList());
 
-    private static uint[] GetSettableValues(nint camera, CameraProperty property)
+    /// <summary>
+    /// Values that can currently be set (EdsGetPropertyDesc), or null when the camera does not list them for this property.
+    /// </summary>
+    private static uint[]? GetSettableValues(nint camera, CameraProperty property)
     {
-        EDSDK.EdsGetPropertyDesc(camera, (uint)property, out var desc).ThrowIfEdSdkError($"Could not get the supported values of {property}");
+        var err = EDSDK.EdsGetPropertyDesc(camera, (uint)property, out var desc);
 
-        return desc.PropDesc
-            .Take(Math.Clamp(desc.NumElements, 0, desc.PropDesc.Length))
+        // EdsGetPropertyDesc is only documented for some properties (EDSDK API reference 3.1.20).
+        if (err is EDSDK.EDS_ERR_INVALID_PARAMETER or EDSDK.EDS_ERR_NOT_SUPPORTED or EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE or EDSDK.EDS_ERR_DEVICEPROP_NOT_SUPPORTED)
+            return null;
+
+        err.ThrowIfEdSdkError($"Could not get the supported values of {property}");
+
+        return (desc.PropDesc ?? [])
+            .Take(Math.Clamp(desc.NumElements, 0, desc.PropDesc?.Length ?? 0))
             .Select(value => (uint)value)
             .ToArray();
     }
 
     /// <summary>
-    /// Sets the raw value of a specific camera property.
-    /// The value is checked against the values the camera currently accepts, as the SDK documentation requires.
+    /// Sets the raw value of a specific camera property, with the same checks as <see cref="SetValue(CameraProperty, string)"/>.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">The camera does not accept this value now.</exception>
-    public Task SetValue(CameraProperty property, uint value) => RunWithBusyRetryAsync(camera =>
-    {
-        var settable = GetSettableValues(camera, property);
-        if (settable.Length > 0 && !settable.Contains(value))
-        {
-            var allowed = string.Join(", ", settable.Select(v => ((uint)property).DescribeValue(v)));
-            throw new ArgumentOutOfRangeException(nameof(value), ((uint)property).DescribeValue(value),
-                $"The camera does not accept this {property} value now. Allowed values: {allowed}");
-        }
-
-        EDSDK.EdsSetPropertyData(camera, (uint)property, 0, sizeof(uint), value)
-            .ThrowIfEdSdkError($"Could not set {property} to {((uint)property).DescribeValue(value)}");
-    });
+    public Task SetValue(CameraProperty property, uint value) => SetValue(property, EdsdkHelper.FormatRawValue(value));
 
     /// <summary>
     /// Sets a camera property from its label (e.g. "1/125", "5.6", "Auto") or raw value ("0x93").
+    /// The value is checked first: readable label, setting changeable in the current mode, value accepted by the camera now.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">The value is unknown or not accepted by the camera now.</exception>
-    public Task SetValue(CameraProperty property, string description)
+    /// <exception cref="CameraSettingsException">The value is refused; nothing was written.</exception>
+    /// <exception cref="EdsException">The camera refused the value when it was written.</exception>
+    public async Task SetValue(CameraProperty property, string description)
     {
-        if (!((uint)property).TryParseValue(description, out var value))
-            throw new ArgumentOutOfRangeException(nameof(description), description, $"Invalid value '{description}' for property {property}");
+        try
+        {
+            await ApplySettingsAsync(new Dictionary<CameraProperty, string> { [property] = description });
+        }
+        catch (CameraSettingsApplyException e) when (e.InnerException != null)
+        {
+            // A single setting: report the camera error itself, as before.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+        }
+    }
 
-        return SetValue(property, value);
+    /// <summary>
+    /// Reads the shooting mode and the ISO, aperture, shutter speed and white balance settings in one call.
+    /// </summary>
+    public Task<CameraSettings> GetSettingsAsync() => RunWithBusyRetryAsync(camera =>
+    {
+        var mode = ReadMode(camera);
+
+        CameraSettingState Read(CameraProperty property)
+        {
+            EDSDK.EdsGetPropertyData(camera, (uint)property, 0, out uint value).ThrowIfEdSdkError($"Could not get {property}");
+            var supported = (GetSettableValues(camera, property) ?? []).Select(v => ((uint)property).DescribeValue(v)).ToList();
+            return new CameraSettingState(((uint)property).DescribeValue(value), supported, CameraSettingRules.IsSettableInMode(property, mode.AEModeCode));
+        }
+
+        return new CameraSettings(mode, Read(CameraProperty.ISOSpeed), Read(CameraProperty.Aperture), Read(CameraProperty.ShutterSpeed), Read(CameraProperty.WhiteBalance));
+    });
+
+    /// <summary>
+    /// Sets several camera properties. Every value is checked before anything is written (readable label, setting
+    /// changeable in the current mode, value accepted by the camera now); the values are then written in
+    /// <see cref="CameraSettingRules.WriteOrder"/>, never during a capture or an autofocus.
+    /// </summary>
+    /// <exception cref="CameraSettingsException">At least one value is refused; nothing was written.</exception>
+    /// <exception cref="CameraSettingsApplyException">A value could not be written; the previous ones were.</exception>
+    public async Task ApplySettingsAsync(IReadOnlyDictionary<CameraProperty, string> settings, CancellationToken cancellationToken = default)
+    {
+        if (settings.Count == 0)
+            return;
+
+        var ordered = CameraSettingRules.WriteOrder.Where(settings.ContainsKey)
+            .Concat(settings.Keys.Where(p => !CameraSettingRules.WriteOrder.Contains(p)))
+            .ToList();
+
+        await _shutterLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            var values = await RunWithBusyRetryAsync(camera =>
+            {
+                var mode = ReadMode(camera);
+                var errors = new List<SettingError>();
+                var valid = new List<(CameraProperty Property, uint Value)>();
+
+                foreach (var property in ordered)
+                {
+                    var error = CameraSettingRules.Validate(property, settings[property], mode.AEModeCode, GetSettableValues(camera, property), out var value);
+                    if (error != null)
+                        errors.Add(error);
+                    else
+                        valid.Add((property, value));
+                }
+
+                if (errors.Count > 0)
+                    throw new CameraSettingsException(mode, errors);
+
+                return valid;
+            }, cancellationToken);
+
+            var applied = new List<CameraProperty>();
+
+            foreach (var (property, value) in values)
+            {
+                try
+                {
+                    await RunWithBusyRetryAsync(camera =>
+                        EDSDK.EdsSetPropertyData(camera, (uint)property, 0, sizeof(uint), value)
+                            .ThrowIfEdSdkError($"Could not set {property} to {((uint)property).DescribeValue(value)}"), cancellationToken);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    throw new CameraSettingsApplyException(applied, property, settings[property], e);
+                }
+
+                applied.Add(property);
+            }
+        }
+        finally
+        {
+            _shutterLock.Release();
+        }
     }
 
     /// <summary>
     /// Gets the shooting mode of the camera (mode dial position and still/movie mode).
     /// </summary>
-    public Task<CameraMode> GetMode() => RunAsync(camera =>
+    public Task<CameraMode> GetMode() => RunAsync(ReadMode);
+
+    private static CameraMode ReadMode(nint camera)
     {
         EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_AEMode, 0, out uint aeMode).ThrowIfEdSdkError("Could not get the AE mode");
 
@@ -626,9 +712,8 @@ public sealed class CanonCamera : IDisposable
             ? fixedMovie != 0
             : null;
 
-        var label = EdsdkHelper.AEModeValues.TryGetValue(aeMode, out var description) ? description : EdsdkHelper.FormatRawValue(aeMode);
-        return new CameraMode(aeMode, label, EdsdkHelper.CreativeZoneAEModes.Contains(aeMode), isMovieMode);
-    });
+        return new CameraMode(aeMode, CameraSettingRules.DescribeAEMode(aeMode), EdsdkHelper.CreativeZoneAEModes.Contains(aeMode), isMovieMode);
+    }
 
     /// <summary>
     /// Gets the restrictions applied by the camera because of its internal temperature.
