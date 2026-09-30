@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.1",
+  "openapi": "3.1.1",
   "info": {
     "title": "Canon Web API",
     "description": "Remote control of a Canon camera through the Canon EDSDK: settings, capture and MJPEG live view. Errors are returned as problem details: 400 invalid value, 409 capture refused by the camera, 503 camera not connected or busy, 504 capture timeout.",
@@ -120,7 +120,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CameraMode2"
+                  "$ref": "#/components/schemas/CameraMode"
                 }
               }
             }
@@ -161,7 +161,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TemperatureStatus2"
+                  "$ref": "#/components/schemas/TemperatureStatus"
                 }
               }
             }
@@ -202,7 +202,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FlashStatus2"
+                  "$ref": "#/components/schemas/FlashStatus"
                 }
               }
             }
@@ -261,7 +261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FlashStatus2"
+                  "$ref": "#/components/schemas/FlashStatus"
                 }
               }
             }
@@ -807,8 +807,7 @@
             "in": "query",
             "description": "Comma separated file types to return (e.g. \"jpg\", \"cr3\", \"jpg,cr3\", \"*\"). Defaults to the Canon:CaptureFileTypes setting (JPEG only).",
             "schema": {
-              "type": "string",
-              "default": null
+              "type": "string"
             }
           }
         ],
@@ -1063,7 +1062,11 @@
         "type": "object",
         "properties": {
           "aeModeCode": {
-            "type": "integer",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
             "format": "uint32"
           },
           "aeMode": {
@@ -1073,34 +1076,10 @@
             "type": "boolean"
           },
           "isMovieMode": {
-            "type": "boolean",
-            "nullable": true
-          }
-        },
-        "nullable": true
-      },
-      "CameraMode2": {
-        "required": [
-          "aeModeCode",
-          "aeMode",
-          "isCreativeZone",
-          "isMovieMode"
-        ],
-        "type": "object",
-        "properties": {
-          "aeModeCode": {
-            "type": "integer",
-            "format": "uint32"
-          },
-          "aeMode": {
-            "type": "string"
-          },
-          "isCreativeZone": {
-            "type": "boolean"
-          },
-          "isMovieMode": {
-            "type": "boolean",
-            "nullable": true
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -1121,28 +1100,57 @@
             "type": "boolean"
           },
           "cameraName": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "liveViewActive": {
             "type": "boolean"
           },
           "liveViewClients": {
-            "type": "integer",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
             "format": "int32"
           },
           "mode": {
-            "$ref": "#/components/schemas/CameraMode"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CameraMode"
+              }
+            ]
           },
           "temperature": {
-            "$ref": "#/components/schemas/TemperatureStatus"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TemperatureStatus"
+              }
+            ]
           },
           "flash": {
-            "$ref": "#/components/schemas/FlashStatus"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlashStatus"
+              }
+            ]
           },
           "error": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1159,41 +1167,19 @@
             "type": "boolean"
           },
           "firing": {
-            "type": "boolean",
-            "nullable": true
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "forcedBeforeCapture": {
             "type": "boolean"
           },
           "lastError": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "nullable": true
-      },
-      "FlashStatus2": {
-        "required": [
-          "isSupported",
-          "firing",
-          "forcedBeforeCapture",
-          "lastError"
-        ],
-        "type": "object",
-        "properties": {
-          "isSupported": {
-            "type": "boolean"
-          },
-          "firing": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "forcedBeforeCapture": {
-            "type": "boolean"
-          },
-          "lastError": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1201,25 +1187,37 @@
         "type": "object",
         "properties": {
           "type": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "title": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "status": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           },
           "detail": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "instance": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1259,39 +1257,13 @@
             "type": "boolean"
           },
           "rawValue": {
-            "type": "integer",
-            "format": "uint32",
-            "nullable": true
-          },
-          "status": {
-            "type": "string"
-          },
-          "movieStatus": {
-            "type": "string"
-          },
-          "isWarning": {
-            "type": "boolean"
-          }
-        },
-        "nullable": true
-      },
-      "TemperatureStatus2": {
-        "required": [
-          "isSupported",
-          "rawValue",
-          "status",
-          "movieStatus",
-          "isWarning"
-        ],
-        "type": "object",
-        "properties": {
-          "isSupported": {
-            "type": "boolean"
-          },
-          "rawValue": {
-            "type": "integer",
-            "format": "uint32",
-            "nullable": true
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "uint32"
           },
           "status": {
             "type": "string"

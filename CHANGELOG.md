@@ -11,6 +11,11 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - The release workflow refuses to run when the tag does not point to the latest commit of `main`,
   so the published package always matches the tag.
 
+- **Migrated from .NET 9 to .NET 10 (LTS)**, supported until November 2028 (.NET 9 support ends in November 2026).
+  The release is still a self-contained executable: nothing to install on the photo booth computers.
+- Packages updated (ASP.NET Core OpenAPI 10, Serilog.AspNetCore 10, Swagger UI 10, AutoUpdater.NET 1.9.3).
+- The OpenAPI document is now OpenAPI 3.1 (was 3.0), without duplicated schemas.
+
 ### Added
 - CI workflow building the solution and running the unit tests on every pull request and push to `main`.
 

@@ -14,7 +14,7 @@ ARG WINDOWS_VERSION=ltsc2022
 # ---------------------------------------------------------------------------
 # Build and unit tests
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:9.0-windowsservercore-${WINDOWS_VERSION} AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-windowsservercore-${WINDOWS_VERSION} AS build
 WORKDIR C:\src
 
 # Restore first so the package layer is cached when only the code changes.

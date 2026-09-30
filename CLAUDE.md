@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CanonWebAPI is a .NET 9 web API for remotely controlling Canon DSLR and mirrorless cameras through the Canon EDSDK. The solution provides REST endpoints for camera control, live view streaming, and image capture.
+CanonWebAPI is a .NET 10 web API for remotely controlling Canon DSLR and mirrorless cameras through the Canon EDSDK. The solution provides REST endpoints for camera control, live view streaming, and image capture.
 
 ## Architecture
 
@@ -86,7 +86,7 @@ Errors are problem details: 400 invalid value, 409 capture refused, 503 not conn
 - The camera can be connected via USB before or after the application starts (automatic connection and reconnection)
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
-- All projects target .NET 9 with Windows-specific dependencies
+- All projects target .NET 10 (`net10.0-windows`) with Windows-specific dependencies
 - Uses structured logging with Serilog (logs to console and `logs/canon-api.log`)
 - Target deployment: photo booth with a Canon EOS R100, dummy battery, no memory card (pictures are saved to the PC only)
 - `docs/openapi.json` must be regenerated when endpoints change
