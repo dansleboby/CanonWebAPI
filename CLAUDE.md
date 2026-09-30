@@ -8,13 +8,12 @@ CanonWebAPI is a .NET 9 web API for remotely controlling Canon DSLR and mirrorle
 
 ## Architecture
 
-The solution consists of 5 projects:
+The solution consists of 4 projects:
 
 - **Canon.API**: ASP.NET Core Web API (main entry point)
 - **Canon.Core**: Core library wrapping Canon EDSDK functionality
 - **Canon.Core.Tests**: xUnit unit tests of Canon.Core (no camera needed, run on Linux too)
-- **Canon.Test**: Console application for testing Canon.Core
-- **Canon.Test.Avalonia**: Desktop GUI test application using Avalonia UI
+- **Canon.Test**: Console application to check Canon.Core with a real camera
 
 ### Key Components
 
@@ -50,11 +49,6 @@ dotnet run --project Canon.API
 ### Run Console Test App
 ```bash
 dotnet run --project Canon.Test
-```
-
-### Run Avalonia GUI Test App
-```bash
-dotnet run --project Canon.Test.Avalonia
 ```
 
 ### Run Unit Tests
@@ -136,6 +130,5 @@ The project uses GitHub Actions for automated releases (record every change in t
 ## Testing
 
 - **Canon.Core.Tests**: xUnit tests of the logic that does not need a camera (value tables, timeouts, file types, CanonThread, LiveViewBroadcaster)
-- **Canon.Test**: Console application for basic Canon.Core functionality testing
-- **Canon.Test.Avalonia**: GUI application for interactive testing and development
+- **Canon.Test**: Console application for a quick check of Canon.Core with a real camera
 - End-to-end testing requires a physical Canon camera connected via USB (not possible in Windows containers)

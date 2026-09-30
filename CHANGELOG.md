@@ -46,6 +46,10 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - `Canon.Core.Tests`: unit tests (xUnit) that do not need a camera; run by the release workflow.
 - `Dockerfile` (Windows containers) to build, test and publish the application.
 
+### Removed
+- `Canon.Test.Avalonia` desktop proof of concept. `Canon.Test` (console check with a real camera) and the new
+  `Canon.Core.Tests` unit tests remain.
+
 ### Fixed
 - Exposure compensation values were unusable (the two columns of the documentation table had been merged,
   only 11 positive values with invalid labels). All 41 values from -5 to +5 are now available.
