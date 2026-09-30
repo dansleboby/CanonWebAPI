@@ -34,7 +34,6 @@ The solution is divided into the following projects:
 *   `Canon.API`: An ASP.NET Core web application that exposes the camera controls as a RESTful API.
 *   `Canon.Core`: A .NET library that wraps the Canon EDSDK, providing a higher-level interface to interact with the camera.
 *   `Canon.Core.Tests`: Unit tests (xUnit) of `Canon.Core` that do not need a camera.
-*   `Canon.Test`: A small console application to check `Canon.Core` with a real camera (reads the settings, takes a picture).
 *   `EDSDK`: Contains the Canon EDSDK 13.20.21 64-bit libraries (`EDSDK.dll`, `EdsImage.dll`).
 
 ## Getting Started
@@ -159,14 +158,10 @@ This project uses automated GitHub Actions for releases:
 
 `docs/autoupdate.xml` is updated by the workflow only: changing it by hand makes every installation download that version.
 
-### Running Different Projects
+### Running the API
 
 ```bash
-# Run the Web API
 dotnet run --project Canon.API
-
-# Run the Console Test Application (needs a camera)
-dotnet run --project Canon.Test
 ```
 
 ### Unit Tests

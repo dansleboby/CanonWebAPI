@@ -47,8 +47,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - `Dockerfile` (Windows containers) to build, test and publish the application.
 
 ### Removed
-- `Canon.Test.Avalonia` desktop proof of concept. `Canon.Test` (console check with a real camera) and the new
-  `Canon.Core.Tests` unit tests remain.
+- `Canon.Test.Avalonia` desktop proof of concept and `Canon.Test` console application, used during the initial
+  development. The API (`/status`, `/takepicture`...) and the `Canon.Core.Tests` unit tests replace them.
 
 ### Fixed
 - Exposure compensation values were unusable (the two columns of the documentation table had been merged,
