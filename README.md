@@ -4,11 +4,13 @@
 
 A web API for remotely controlling Canon DSLR and mirrorless cameras. This project utilizes the Canon EDSDK to communicate with the camera and includes automatic update capabilities.
 
-**Current version: 1.3.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
+**Current version: 1.4.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
 
 > **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---2026-09-30).
 
 > **Upgrading from 1.2.x**: the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) now answer 409 `not-settable-in-mode` when the shooting mode locks the setting, and setting errors carry machine readable fields (`reason`, `acceptedValues`...). See [Setting errors](#setting-errors) and the [changelog](CHANGELOG.md#1300---2026-09-30).
+
+> **Upgrading from 1.3.x**: settings changed in `appsettings.json` are reset by this update: put them in `appsettings.Local.json`, which updates never overwrite (see [Configuration](#configuration)). `POST /settings` refuses unknown fields (400), and f/4.5 in 1/3 stop steps now reads `"4.5 (1/3)"` (sending `"4.5"` still works). See the [changelog](CHANGELOG.md#1400---2026-09-30).
 
 ## Features
 
@@ -36,6 +38,7 @@ The solution is divided into the following projects:
 *   `Canon.API`: An ASP.NET Core web application that exposes the camera controls as a RESTful API.
 *   `Canon.Core`: A .NET library that wraps the Canon EDSDK, providing a higher-level interface to interact with the camera.
 *   `Canon.Core.Tests`: Unit tests (xUnit) of `Canon.Core` that do not need a camera.
+*   `Canon.API.Tests`: Unit tests (xUnit) of the error mapping, the request models and the log levels of `Canon.API`.
 *   `EDSDK`: Contains the Canon EDSDK 13.20.21 64-bit libraries (`EDSDK.dll`, `EdsImage.dll`).
 
 ## Getting Started
@@ -53,7 +56,8 @@ The solution is divided into the following projects:
 1.  Clone this repository.
 2.  Ensure the `EDSDK` folder, containing `EDSDK.dll` and `EdsImage.dll`, is present in the project's root directory. These files are essential for the `Canon.Core` library to communicate with the camera.
 3.  Build the solution using Visual Studio or the `dotnet build` command.
-4.  Run the `Canon.API` project. This will start the web server.
+4.  Run the `Canon.API` project. This will start the web server, on `http://localhost:5000` by default for the release
+    executable (`http://localhost:5159` with `dotnet run`); set `ASPNETCORE_URLS` (or `--urls`) to change it.
 
 ## API Endpoints
 
@@ -70,8 +74,8 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/flash`                     | Gets the "flash firing" setting as last set by the API (a change made in the camera menu is not reported by the SDK). | N/A |
 | POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. | `"fire"` or `"off"` |
-| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: allowed by the shooting mode and the camera accepts at least one value now). | N/A |
-| POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged. | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "whiteBalance": "Daylight" }` |
+| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed, exposure compensation and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: allowed by the shooting mode and the camera accepts at least one value now). | N/A |
+| POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, exposureCompensation, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged; an unknown field is refused (400). | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "exposureCompensation": "0", "whiteBalance": "Daylight" }` |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
 | POST   | `/iso`                       | Sets the ISO speed.                                     | `"100"`                |
 | GET    | `/aperture`                  | Gets the current aperture and a list of supported values. | N/A                    |
@@ -127,7 +131,7 @@ it (the `form`/`access` fields of `EdsGetPropertyDesc` are reserved), hence this
 | P, A-DEP | ✓ | | | ✓ | ✓ |
 | Tv | ✓ | | ✓ | ✓ | ✓ |
 | Av | ✓ | ✓ | | ✓ | ✓ |
-| M | ✓ | ✓ | ✓ | | ✓ |
+| M | ✓ | ✓ | ✓ | ✓ with ISO Auto | ✓ |
 | Bulb | ✓ | ✓ | | | ✓ |
 | Fv | ✓ | ✓ | ✓ | ✓ | ✓ |
 
@@ -137,11 +141,26 @@ If the camera refuses a value while `POST /settings` writes it, the problem deta
 
 ## Configuration
 
-Settings are read from `appsettings.json` (next to the executable) or environment variables (e.g. `Canon__CaptureFileTypes__0=jpg`).
+Settings are read, in increasing order of precedence, from `appsettings.json`, `appsettings.Local.json` (both next to the
+executable, whatever the working directory), environment variables (e.g. `Canon__CaptureFileTypes__0=jpg`) and the command line.
+Logs are written to the console and to `logs/canon-api.log` next to the executable.
+
+Put the settings of a photo booth in `appsettings.Local.json`, never in `appsettings.json`: `appsettings.json` is part of the
+release package and every automatic update overwrites it, while `appsettings.Local.json` is never shipped. It only needs the
+settings that differ from the defaults, e.g.:
+
+```json
+{
+  "Canon": {
+    "FlashTarget": "External",
+    "CaptureFileTypes": [ "jpg", "cr3" ]
+  }
+}
+```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `Canon:CaptureFileTypes` | `["jpg"]` | File types downloaded after a capture, in order of preference (`jpg`, `heif`, `cr3`, `*`...). Other files are cancelled on the camera. Can be overridden per request with `fileTypes`. |
+| `Canon:CaptureFileTypes` | `["jpg"]` | File types downloaded after a capture (`jpg`, `heif`, `cr3`, `*`...); the first matching file the camera sends is returned. Other files are cancelled on the camera. Can be overridden per request with `fileTypes`. |
 | `Canon:CaptureTimeoutSeconds` | `10` | Time allowed to receive a capture, added to the exposure time of the current shutter speed. |
 | `Canon:AutoFocusHoldMilliseconds` | `800` | How long `/autofocus` holds the shutter button halfway. |
 | `Canon:LiveViewSmallImage` | `false` | Uses the smaller live view image (less bandwidth, lower resolution; not supported by every camera). |
@@ -152,16 +171,19 @@ Settings are read from `appsettings.json` (next to the executable) or environmen
 | `Canon:BusyRetryCount` / `BusyRetryDelayMilliseconds` | `3` / `500` | Retries when the camera answers "device busy". |
 | `LiveView:FrameIntervalMilliseconds` | `30` | Delay between two live view frames. |
 | `LiveView:IdleStopDelayMilliseconds` | `3000` | The camera live view stops this long after the last `/videostream` client left. |
+| `LiveView:ErrorRetryDelayMilliseconds` | `1000` | Delay before retrying after a live view error (e.g. camera disconnected). |
 | `AutoUpdate:Enabled` | `true` | Checks for updates at startup. |
+| `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. |
+| `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). |
 
 ## Automatic Updates
 
 This application includes automatic update functionality powered by AutoUpdater.NET:
 
-*   **Automatic version checking** on startup
+*   **Automatic version checking** on startup, before the web server starts and the camera is opened
 *   **Seamless updates** without requiring admin privileges
-*   **Graceful shutdown** handling for web server during updates
 *   Updates are downloaded from GitHub releases automatically
+*   `appsettings.json` is replaced by each update: keep the settings of a photo booth in `appsettings.Local.json`
 
 ## Development & Building
 
@@ -187,9 +209,9 @@ dotnet run --project Canon.API
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.3.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
+2. **Tag-based releases**: Push a tag like `v1.4.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
-4. **Unit tests**: The workflow runs `Canon.Core.Tests` before packaging
+4. **Unit tests**: The workflow runs `Canon.Core.Tests` and `Canon.API.Tests` before packaging
 5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML
 6. **GitHub releases**: Automatically creates GitHub releases with generated notes
 
@@ -204,12 +226,14 @@ dotnet run --project Canon.API
 ### Unit Tests
 
 ```bash
-dotnet test Canon.Core.Tests
+dotnet test CanonSDK.sln
 ```
 
 The `CI` GitHub Actions workflow builds the solution and runs these tests on every pull request and push to `main`.
 
-The tests cover the value tables, the capture timeout, the file type filter, the SDK thread and the live view broadcaster. They do not need a camera and also run on Linux/macOS.
+The tests cover the value tables, the settings rules, the capture timeout, the file type filter, the SDK thread, the live view
+broadcaster, the structure layouts of the EDSDK wrapper, the error mapping of the API, the request models and the log levels.
+They do not need a camera and also run on Linux/macOS.
 
 ### Docker (Windows containers)
 

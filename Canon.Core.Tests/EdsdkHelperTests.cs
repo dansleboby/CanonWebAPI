@@ -40,6 +40,28 @@ public class EdsdkHelperTests
         Assert.Equal(label, ((uint)CameraProperty.ExposureCompensation).DescribeValue(value));
     }
 
+    [Theory]
+    [InlineData(0x2Bu, "4.5 (1/3)")]
+    [InlineData(0x2Cu, "4.5")]
+    [InlineData(0x1Du, "2.5 (1/3)")]
+    [InlineData(0x1Cu, "2.5")]
+    public void Aperture_pairs_mark_the_one_third_stop_value(uint value, string label)
+    {
+        Assert.Equal(label, ((uint)CameraProperty.Aperture).DescribeValue(value));
+    }
+
+    [Fact]
+    public void Same_label_values_are_the_other_exposure_step()
+    {
+        var aperture = (uint)CameraProperty.Aperture;
+
+        Assert.Equal([0x2Bu], aperture.GetSameLabelValues("4.5"));
+        Assert.Equal([0x2Cu], aperture.GetSameLabelValues("4.5 (1/3)"));
+        Assert.Equal([0x1Du], ((uint)CameraProperty.ShutterSpeed).GetSameLabelValues("10\""));
+        Assert.Empty(aperture.GetSameLabelValues("5.6"));
+        Assert.Empty(aperture.GetSameLabelValues("0x1C"));
+    }
+
     [Fact]
     public void Exposure_compensation_has_every_documented_step()
     {

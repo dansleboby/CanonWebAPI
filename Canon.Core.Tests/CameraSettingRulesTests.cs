@@ -150,11 +150,47 @@ public class CameraSettingRulesTests
     }
 
     [Fact]
-    public void Exposure_compensation_cannot_be_changed_in_M()
+    public void Exposure_compensation_can_be_changed_in_M_only_with_ISO_Auto()
     {
-        Assert.Equal(SettingErrorReason.NotSettableInMode, Validate(CameraProperty.ExposureCompensation, "+1/3", Manual)?.Reason);
+        var error = Validate(CameraProperty.ExposureCompensation, "+1/3", Manual);
+
+        Assert.Equal(SettingErrorReason.NotSettableInMode, error?.Reason);
+        Assert.Contains("unless ISO is Auto", error!.Message);
+        Assert.Null(CameraSettingRules.Validate(CameraProperty.ExposureCompensation, "+1/3", Manual, null, out _, isoAuto: true));
+        Assert.True(CameraSettingRules.IsSettable(CameraProperty.ExposureCompensation, Manual, null, isoAuto: true));
+        Assert.False(CameraSettingRules.IsSettable(CameraProperty.ExposureCompensation, Manual, [], isoAuto: true));
         Assert.Null(Validate(CameraProperty.ExposureCompensation, "+1/3", Av));
         Assert.Null(Validate(CameraProperty.ExposureCompensation, "+1/3", ProgramAE));
+    }
+
+    [Fact]
+    public void ISO_Auto_does_not_unlock_other_modes()
+    {
+        Assert.False(CameraSettingRules.IsSettableInMode(CameraProperty.ExposureCompensation, SceneIntelligentAuto, isoAuto: true));
+        Assert.False(CameraSettingRules.IsSettableInMode(CameraProperty.ShutterSpeed, Av, isoAuto: true));
+    }
+
+    [Theory]
+    [InlineData("2.5", 0x1Du, 0x1Cu)]
+    [InlineData("4.5", 0x2Bu, 0x2Cu)]
+    public void Label_shared_by_both_exposure_steps_takes_the_value_the_camera_accepts(string label, uint oneThirdStop, uint halfStop)
+    {
+        // Apertures listed by the camera with 1/3 and 1/2 stop exposure steps (2 to 5.6).
+        uint[] oneThirdStops = [0x18, 0x1B, 0x1D, 0x20, 0x23, 0x25, 0x28, 0x2B, 0x2D, 0x30];
+        uint[] halfStops = [0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30];
+
+        Assert.Null(CameraSettingRules.Validate(CameraProperty.Aperture, label, Manual, oneThirdStops, out var value));
+        Assert.Equal(oneThirdStop, value);
+        Assert.Null(CameraSettingRules.Validate(CameraProperty.Aperture, label, Manual, halfStops, out value));
+        Assert.Equal(halfStop, value);
+    }
+
+    [Fact]
+    public void Raw_value_is_never_swapped_for_the_other_exposure_step()
+    {
+        uint[] oneThirdStops = [0x18, 0x1B, 0x1D, 0x20];
+
+        Assert.Equal(SettingErrorReason.ValueNotAccepted, Validate(CameraProperty.Aperture, "0x1C", Manual, oneThirdStops)?.Reason);
     }
 
     [Fact]

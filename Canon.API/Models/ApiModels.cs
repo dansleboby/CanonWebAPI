@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Canon.Core;
 
 namespace Canon.API.Models;
@@ -29,13 +30,21 @@ public sealed record CameraStatusResponse(
     string? Error);
 
 /// <summary>
-/// Settings to apply with POST /settings. Omitted (or null) settings are left unchanged.
+/// Settings to apply with POST /settings. Omitted (or null) settings are left unchanged; an unknown field is refused,
+/// so a misspelled setting is not silently ignored.
 /// </summary>
 /// <param name="Iso">ISO speed (e.g. "Auto", "400").</param>
 /// <param name="Aperture">Aperture (e.g. "5.6").</param>
 /// <param name="ShutterSpeed">Shutter speed (e.g. "1/125").</param>
+/// <param name="ExposureCompensation">Exposure compensation (e.g. "0", "+1/3", "-1 2/3").</param>
 /// <param name="WhiteBalance">White balance (e.g. "Auto", "Daylight").</param>
-public sealed record CameraSettingsRequest(string? Iso = null, string? Aperture = null, string? ShutterSpeed = null, string? WhiteBalance = null)
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CameraSettingsRequest(
+    string? Iso = null,
+    string? Aperture = null,
+    string? ShutterSpeed = null,
+    string? ExposureCompensation = null,
+    string? WhiteBalance = null)
 {
     public Dictionary<CameraProperty, string> ToDictionary()
     {
@@ -43,6 +52,7 @@ public sealed record CameraSettingsRequest(string? Iso = null, string? Aperture 
         if (Iso != null) settings[CameraProperty.ISOSpeed] = Iso;
         if (Aperture != null) settings[CameraProperty.Aperture] = Aperture;
         if (ShutterSpeed != null) settings[CameraProperty.ShutterSpeed] = ShutterSpeed;
+        if (ExposureCompensation != null) settings[CameraProperty.ExposureCompensation] = ExposureCompensation;
         if (WhiteBalance != null) settings[CameraProperty.WhiteBalance] = WhiteBalance;
         return settings;
     }

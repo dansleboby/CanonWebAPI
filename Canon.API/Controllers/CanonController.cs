@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
+using Canon.API.Infrastructure;
 using Canon.API.Models;
 using Canon.Core;
 using Microsoft.AspNetCore.Http.Features;
@@ -16,7 +17,7 @@ namespace Canon.API.Controllers;
 [ApiController]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
-public class CanonController(ILogger<CanonController> logger, CanonCamera camera, LiveViewBroadcaster liveView) : ControllerBase
+public class CanonController(ILogger<CanonController> logger, CanonCamera camera, LiveViewBroadcaster liveView, IHostApplicationLifetime lifetime) : ControllerBase
 {
     private static readonly byte[] FrameBoundary = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "u8.ToArray();
     private static readonly byte[] HeaderEnd = "\r\n\r\n"u8.ToArray();
@@ -28,6 +29,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     public async Task<IActionResult> GetCameraName() => Ok(await camera.GetCameraName());
 
     [HttpGet("status")]
+    [NeverUnavailable]
     [EndpointSummary("Camera connection, shooting mode, temperature and live view state")]
     [EndpointDescription("Never fails because of the camera: when it is not connected, 'connected' is false and 'error' explains why.")]
     [ProducesResponseType<CameraStatusResponse>(StatusCodes.Status200OK, "application/json")]
@@ -76,13 +78,14 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     [EndpointDescription("The camera must be in P, Tv, Av or M. With Canon:ForceFlashFiring (default), the setting is set back to Fire before the next capture.")]
     [ProducesResponseType<FlashStatus>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    public async Task<IActionResult> SetFlash([Required][FromBody] string value)
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> SetFlash([Required][FromBody] string value, CancellationToken cancellationToken)
     {
         if (!FlashStatus.TryParseFiring(value, out var firing))
             throw new ArgumentException($"Invalid flash value '{value}'. Use \"fire\" or \"off\".", nameof(value));
 
         logger.LogInformation("Setting flash firing to {Firing}", firing ? "Fire" : "Off");
-        await camera.SetFlashFiringAsync(firing);
+        await camera.SetFlashFiringAsync(firing, cancellationToken);
         return Ok(await camera.GetFlashStatus());
     }
 
@@ -105,7 +108,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
         "The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.";
 
     [HttpGet("settings")]
-    [EndpointSummary("Shooting mode, ISO, aperture, shutter speed and white balance in one call")]
+    [EndpointSummary("Shooting mode, ISO, aperture, shutter speed, exposure compensation and white balance in one call")]
     [EndpointDescription("For each setting: current value, values the camera accepts now, and whether it can be changed now (settable: allowed by the shooting mode and at least one value accepted by the camera).")]
     [ProducesResponseType<CameraSettings>(StatusCodes.Status200OK, "application/json")]
     public async Task<IActionResult> GetSettings() => Ok(await camera.GetSettingsAsync());
@@ -116,7 +119,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
         "Every value is checked before anything is written; when one is refused nothing is written and the problem details list " +
         "every refused setting in 'errors' (property, value, reason, acceptedValues, detail). 409 when one of them cannot be changed " +
         "in the current shooting mode, 400 otherwise. Values are then written in a fixed order (iso, aperture, shutterSpeed, " +
-        "whiteBalance), never during a capture. If a write fails, the problem details list the settings already written in " +
+        "exposureCompensation, whiteBalance), never during a capture. An unknown field is refused (400). If a write fails, the problem details list the settings already written in " +
         "'applied' and the one that failed in 'failed'. On success, returns the settings read back from the camera, as GET /settings.")]
     [ProducesResponseType<CameraSettings>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -176,7 +179,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("exposure")]
     [EndpointSummary("Set the exposure compensation (e.g. \"0\", \"+1/3\", \"-1 2/3\")")]
-    [EndpointDescription("Not available in manual exposure mode, nor in the basic zone modes. " + SetterErrors)]
+    [EndpointDescription("In manual exposure mode, only with ISO Auto; not available in the basic zone modes. " + SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -204,7 +207,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     [HttpPost("takepicture")]
     [EndpointSummary("Take a picture and return the captured file")]
     [EndpointDescription("The timeout adapts to the shutter speed. The file name is returned in the X-File-Name header.")]
-    [ProducesResponseType<Stream>(StatusCodes.Status200OK, "image/jpeg", "application/octet-stream")]
+    [ProducesResponseType<Stream>(StatusCodes.Status200OK, "image/jpeg", "image/heif", "image/x-canon-cr3", "application/octet-stream")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status504GatewayTimeout, "application/problem+json")]
     public async Task<IActionResult> TakePicture(
@@ -222,8 +225,9 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     }
 
     [HttpGet("latestpicture")]
+    [NeverUnavailable]
     [EndpointSummary("Last picture received from the camera")]
-    [ProducesResponseType<Stream>(StatusCodes.Status200OK, "image/jpeg", "application/octet-stream")]
+    [ProducesResponseType<Stream>(StatusCodes.Status200OK, "image/jpeg", "image/heif", "image/x-canon-cr3", "application/octet-stream")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public IActionResult GetLatestPicture()
     {
@@ -239,6 +243,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     [HttpPost("autofocus")]
     [EndpointSummary("Focus (half-press of the shutter button)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> AutoFocus()
     {
         logger.LogInformation("Starting auto focus");
@@ -283,7 +288,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     [ProducesResponseType<Stream>(StatusCodes.Status200OK, "multipart/x-mixed-replace")]
     public async Task GetVideoStream()
     {
-        var cancellationToken = HttpContext.RequestAborted;
+        // Kestrel waits for open requests before stopping: end the stream when the application stops,
+        // so the live view is stopped and the camera session closed without waiting for the shutdown timeout.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted, lifetime.ApplicationStopping);
+        var cancellationToken = stopping.Token;
 
         // Fails with a problem details response when no camera is connected, before the stream starts.
         await camera.ConnectAsync();
@@ -308,7 +316,7 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Normal client disconnect.
+            // Client disconnected or application stopping.
         }
         finally
         {

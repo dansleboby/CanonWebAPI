@@ -1362,29 +1362,29 @@ internal class EDSDK
 
     public static byte[] ConvertMWB(EdsManualWBData pcwb)
     {
-        var headerSize = 40;
-        var MWBHEADERSIZE = sizeof(uint) * 3;
+        const int headerSize = 40;
+        const int mwbHeaderSize = sizeof(uint) * 3;
 
-        var datasize = (int) pcwb.dataSize;
-        // Since the pointer is copied by the following StructureToPtr,
-        // if the data size is less than the pointer size, the buffer is enlarged.
-        if (datasize < IntPtr.Size)
-            datasize = IntPtr.Size;
+        // Only the header goes through the marshaller, with a placeholder of the declared size for data.
+        var header = pcwb;
+        header.dataSize += mwbHeaderSize;
+        header.data = new byte[8];
 
-        var size = (int) pcwb.dataSize + MWBHEADERSIZE + headerSize;
-        var ptr = Marshal.AllocHGlobal(datasize + headerSize);
-        pcwb.dataSize += (uint) MWBHEADERSIZE;
-        Marshal.StructureToPtr(pcwb, ptr, true);
-        pcwb.dataSize -= (uint) MWBHEADERSIZE;
-        var buff = new byte[size];
-        Marshal.Copy(ptr, buff, 0, headerSize);
-        var i = 0;
-        for (i = 0; i < MWBHEADERSIZE; i++)
-            buff[headerSize + i] = 0;
+        var ptr = Marshal.AllocHGlobal(Marshal.SizeOf<EdsManualWBData>());
+        try
+        {
+            Marshal.StructureToPtr(header, ptr, false);
 
-        for (var j = 0; j < pcwb.dataSize; j++) buff[headerSize + i + j] = pcwb.data[j];
-        Marshal.FreeHGlobal(ptr);
-        return buff;
+            // Header, then mwbHeaderSize zero bytes, then the payload.
+            var buff = new byte[headerSize + mwbHeaderSize + pcwb.dataSize];
+            Marshal.Copy(ptr, buff, 0, headerSize);
+            pcwb.data.AsSpan(0, (int) pcwb.dataSize).CopyTo(buff.AsSpan(headerSize + mwbHeaderSize));
+            return buff;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 
     public static EdsManualWBData MarshalPtrToManualWBData(IntPtr ptr)
@@ -1826,10 +1826,10 @@ internal class EDSDK
 
     /*-----------------------------------------------------------------------------
     //
-    //  Function:   EdsCreateStreamEx
+    //  Function:   EdsCreateFileStreamEx
     //
     //  Description:
-    //      An extended version of EdsCreateStreamFromFile.
+    //      An extended version of EdsCreateFileStream.
     //      Use this function when working with Unicode file names.
     //
     //  Parameters:
@@ -1843,8 +1843,8 @@ internal class EDSDK
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
     [DllImport("EDSDK.dll")]
-    public static extern uint EdsCreateStreamEx(
-        string inFileName,
+    public static extern uint EdsCreateFileStreamEx(
+        [MarshalAs(UnmanagedType.LPWStr)] string inFileName,
         EdsFileCreateDisposition inCreateDisposition,
         EdsAccess inDesiredAccess,
         out IntPtr outStream
@@ -1934,7 +1934,7 @@ internal class EDSDK
     -----------------------------------------------------------------------------*/
     [DllImport("EDSDK.dll")]
     public static extern uint EdsWrite(IntPtr inStreamRef, ulong inWriteSize, IntPtr inBuffer,
-        out uint outWrittenSize);
+        out ulong outWrittenSize);
 
     /*-----------------------------------------------------------------------------
     //
@@ -2267,7 +2267,7 @@ internal class EDSDK
     //  Returns:   Any of the sdk errors.
     ------------------------------------------------------------------------------*/
     [DllImport("EDSDK.dll")]
-    public static extern uint EdsSetFramePoint(IntPtr inCameraRef, EdsSize inFramePoint, bool inLockAfFrame);
+    public static extern uint EdsSetFramePoint(IntPtr inCameraRef, EdsPoint inFramePoint, [MarshalAs(UnmanagedType.U1)] bool inLockAfFrame);
 
     /*-----------------------------------------------------------------------------
     //
@@ -2594,6 +2594,9 @@ internal class EDSDK
         public uint ShootingNumber;
         public uint StepWidth;
         public uint ExposureSmoothing;
+        public uint FocusStackingFunction;
+        public uint FocusStackingTrimming;
+        public uint FlashInterval;
     }
 
     /*-----------------------------------------------------------------------------
@@ -2608,7 +2611,9 @@ internal class EDSDK
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
         public string szCaption;
 
-        [MarshalAs(UnmanagedType.ByValArray)] public byte[] data;
+        // The native header declares data[8]; the actual payload is dataSize bytes, copied by ConvertMWB and
+        // MarshalPtrToManualWBData outside of the marshaller.
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public byte[] data;
     }
 
     #endregion

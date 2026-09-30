@@ -2,10 +2,14 @@ using Canon.API.Infrastructure;
 using Serilog;
 using AutoUpdaterDotNET;
 
+// Next to the executable, whatever the working directory (shortcut, scheduled task...).
+var logFile = Path.Combine(AppContext.BaseDirectory, "logs", "canon-api.log");
+
+// Startup logger, replaced by the configured one once the host is built.
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
-    .WriteTo.File("logs/canon-api.log", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
+    .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
+    .CreateBootstrapLogger();
 
 // Display application version
 var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -13,9 +17,21 @@ Log.Information("CanonWebAPI v{Version} starting...", version);
 
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
+    // Settings files are read next to the executable, whatever the working directory.
+    var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 
-    builder.Services.AddSerilog();
+    // Operator settings. The release package ships appsettings.json, which every automatic update overwrites;
+    // this file is never shipped. Environment variables and the command line keep precedence over it.
+    builder.Configuration
+        .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .AddCommandLine(args);
+
+    // This overload reloads the startup logger, which closes its log file before the configured logger opens it.
+    builder.Services.AddSerilog((_, logger) => logger
+        .ApplyLogLevels(builder.Configuration)
+        .WriteTo.Console()
+        .WriteTo.File(logFile, rollingInterval: RollingInterval.Day));
     builder.Services.AddCanonApi(builder.Configuration, version);
 
     // The API only listens on the local machine, so any origin is allowed.
@@ -26,7 +42,7 @@ try
             policy.AllowAnyOrigin()
                   .AllowAnyMethod()
                   .AllowAnyHeader()
-                  .WithExposedHeaders("X-File-Name");
+                  .WithExposedHeaders("X-File-Name", "Retry-After");
         });
     });
 
@@ -72,39 +88,13 @@ static void ConfigureAutoUpdater(WebApplication app)
     AutoUpdater.DownloadPath = appDirectory;
     AutoUpdater.InstallationPath = appDirectory;
 
-    // Handle application exit for updates - properly shutdown web server and release the camera
+    // The check is synchronous and runs before app.Run(): the web server is not started and the camera not opened yet,
+    // so there is nothing to stop before the updater replaces the files.
     AutoUpdater.ApplicationExitEvent += () =>
     {
         Log.Information("AutoUpdater requesting application exit for update...");
-
-        var shutdownTask = Task.Run(async () =>
-        {
-            try
-            {
-                // Stop accepting new requests, then dispose services: stops the live view,
-                // closes the camera session and terminates the SDK.
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                await app.StopAsync(timeout.Token);
-                await app.DisposeAsync();
-                Log.Information("Web server stopped gracefully");
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Error during graceful shutdown, forcing exit");
-            }
-            finally
-            {
-                Log.CloseAndFlush();
-                Environment.Exit(0);
-            }
-        });
-
-        // Wait maximum 10 seconds for graceful shutdown
-        if (!shutdownTask.Wait(10000))
-        {
-            Log.Warning("Graceful shutdown timed out, forcing exit");
-            Environment.Exit(0);
-        }
+        Log.CloseAndFlush();
+        Environment.Exit(0);
     };
 
     AutoUpdater.Start(app.Configuration["AutoUpdate:Url"] ?? "https://dansleboby.github.io/CanonWebAPI/autoupdate.xml");

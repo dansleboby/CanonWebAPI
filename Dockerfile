@@ -21,20 +21,26 @@ WORKDIR C:\src
 COPY Directory.Build.props ./
 COPY Canon.Core/Canon.Core.csproj Canon.Core/
 COPY Canon.Core.Tests/Canon.Core.Tests.csproj Canon.Core.Tests/
+COPY Canon.API.Tests/Canon.API.Tests.csproj Canon.API.Tests/
 COPY Canon.API/Canon.API.csproj Canon.API/
 RUN dotnet restore Canon.Core.Tests/Canon.Core.Tests.csproj && `
+    dotnet restore Canon.API.Tests/Canon.API.Tests.csproj && `
     dotnet restore Canon.API/Canon.API.csproj -r win-x64
 
 COPY EDSDK/ EDSDK/
 COPY Canon.Core/ Canon.Core/
 COPY Canon.Core.Tests/ Canon.Core.Tests/
+COPY Canon.API.Tests/ Canon.API.Tests/
 COPY Canon.API/ Canon.API/
 
-RUN dotnet build Canon.Core.Tests/Canon.Core.Tests.csproj -c Release --no-restore
+RUN dotnet build Canon.Core.Tests/Canon.Core.Tests.csproj -c Release --no-restore && `
+    dotnet build Canon.API.Tests/Canon.API.Tests.csproj -c Release --no-restore
 
 FROM build AS test
 RUN dotnet test Canon.Core.Tests/Canon.Core.Tests.csproj -c Release --no-build `
-    --logger "trx;LogFileName=results.trx" --results-directory C:\testresults
+    --logger "trx;LogFileName=core.trx" --results-directory C:\testresults && `
+    dotnet test Canon.API.Tests/Canon.API.Tests.csproj -c Release --no-build `
+    --logger "trx;LogFileName=api.trx" --results-directory C:\testresults
 
 # ---------------------------------------------------------------------------
 # Publish: same self-contained single-file executable as the GitHub release
