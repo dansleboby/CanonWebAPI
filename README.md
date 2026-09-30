@@ -42,7 +42,7 @@ The solution is divided into the following projects:
 
 *   A compatible Canon camera (tested with **Canon EOS R100** and **Canon T7**).
 *   The camera connected to the computer via USB.
-*   **.NET 9 SDK** (or newer).
+*   **.NET 10 SDK** (or newer) to build the project.
 *   The Canon EOS Utility software should not be running, as it can prevent this application from connecting to the camera.
 *   **Windows** operating system (x64 architecture required).
 
@@ -211,7 +211,7 @@ dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
 
 ### System Requirements
 *   **OS**: Windows 10/11 (x64)
-*   **Runtime**: .NET 9 or newer
+*   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 
 > **Note**: While this software has been tested with the above camera models, it should work with other Canon cameras that support the EDSDK. However, functionality may vary depending on the specific camera model and its supported features.
