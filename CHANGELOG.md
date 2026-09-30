@@ -5,6 +5,15 @@ All notable changes to CanonWebAPI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
+## [Unreleased]
+
+### Changed
+- The release workflow refuses to run when the tag does not point to the latest commit of `main`,
+  so the published package always matches the tag.
+
+### Added
+- CI workflow building the solution and running the unit tests on every pull request and push to `main`.
+
 ## [1.1.0.0] - Unreleased
 
 ### Changed
@@ -136,7 +145,8 @@ First release.
 - Automatic updates with AutoUpdater.NET, from GitHub releases.
 - CI/CD workflow building the release package.
 
-[1.1.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.11...HEAD
+[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...HEAD
+[1.1.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.11...v1.1.0.0
 [1.0.0.11]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.10...v1.0.0.11
 [1.0.0.10]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.9...v1.0.0.10
 [1.0.0.9]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.8...v1.0.0.9

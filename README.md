@@ -150,7 +150,7 @@ dotnet run --project Canon.API
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.1.0.0` on `main` to trigger automated build and release
+2. **Tag-based releases**: Push a tag like `v1.1.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
 4. **Unit tests**: The workflow runs `Canon.Core.Tests` before packaging
 5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML
@@ -169,6 +169,8 @@ dotnet run --project Canon.API
 ```bash
 dotnet test Canon.Core.Tests
 ```
+
+The `CI` GitHub Actions workflow builds the solution and runs these tests on every pull request and push to `main`.
 
 The tests cover the value tables, the capture timeout, the file type filter, the SDK thread and the live view broadcaster. They do not need a camera and also run on Linux/macOS.
 
