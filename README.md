@@ -4,9 +4,11 @@
 
 A web API for remotely controlling Canon DSLR and mirrorless cameras. This project utilizes the Canon EDSDK to communicate with the camera and includes automatic update capabilities.
 
-**Current version: 1.2.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
+**Current version: 1.3.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
 
 > **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---2026-09-30).
+
+> **Upgrading from 1.2.x**: the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) now answer 409 `not-settable-in-mode` when the shooting mode locks the setting, and setting errors carry machine readable fields (`reason`, `acceptedValues`...). See [Setting errors](#setting-errors) and the [changelog](CHANGELOG.md#1300---2026-09-30).
 
 ## Features
 
@@ -68,6 +70,8 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/flash`                     | Gets the "flash firing" setting as last set by the API (a change made in the camera menu is not reported by the SDK). | N/A |
 | POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. | `"fire"` or `"off"` |
+| GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: allowed by the shooting mode and the camera accepts at least one value now). | N/A |
+| POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged. | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "whiteBalance": "Daylight" }` |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
 | POST   | `/iso`                       | Sets the ISO speed.                                     | `"100"`                |
 | GET    | `/aperture`                  | Gets the current aperture and a list of supported values. | N/A                    |
@@ -75,7 +79,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/shutterspeed`              | Gets the current shutter speed and a list of supported values. | N/A                    |
 | POST   | `/shutterspeed`              | Sets the shutter speed.                                 | `"1/125"`              |
 | GET    | `/exposure`                  | Gets the current exposure compensation and supported values. | N/A                    |
-| POST   | `/exposure`                  | Sets the exposure compensation (not available in manual mode). | `"+1/3"`         |
+| POST   | `/exposure`                  | Sets the exposure compensation (not available in M, nor in the basic zone modes). | `"+1/3"`         |
 | GET    | `/whitebalance`              | Gets the current white balance and supported values.    | N/A                    |
 | POST   | `/whitebalance`              | Sets the white balance.                                 | `"Auto"`               |
 | POST   | `/takepicture`               | Takes a picture and returns the file (JPEG by default). Query parameters: `useAutoFocus` (default `true`), `fileTypes` (e.g. `cr3`, `jpg,cr3`, `*`). The file name is in the `X-File-Name` header. | N/A |
@@ -85,6 +89,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | POST   | `/autofocus`                 | Triggers the camera's autofocus mechanism.              | N/A                    |
 
 Values the camera does not know a label for are returned as raw hexadecimal values (e.g. `"0x99"`), which can also be sent back.
+A setting that is not valid in the current state (e.g. exposure compensation in M) reads `"Not valid"`.
 
 ### Errors
 
@@ -92,11 +97,43 @@ Errors are returned as [problem details](https://www.rfc-editor.org/rfc/rfc9457)
 
 | Status | Meaning |
 |--------|---------|
-| 400    | Invalid value, or value not accepted by the camera now (the message lists the accepted values). |
+| 400    | Invalid value, or value not accepted by the camera now (`acceptedValues` lists the accepted values). |
 | 404    | No picture / live view image available. |
-| 409    | The camera refused to take the picture (focus failure, no lens, movie mode...). |
+| 409    | The camera refused to take the picture (focus failure, no lens, movie mode...), or the setting cannot be changed in the current shooting mode. |
 | 503    | Camera not connected, or busy (`Retry-After` header). |
 | 504    | The camera did not deliver the picture in time. |
+
+#### Setting errors
+
+`POST /settings` and the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) check the value before writing it
+and answer with the same machine readable problem details:
+
+| Status | `reason` | Meaning |
+|--------|----------|---------|
+| 400    | `invalid-value` | The label cannot be read (e.g. `"1/7"`, `"f/5.6"`). |
+| 400    | `value-not-accepted` | The camera does not accept this value now (lens, exposure step...). |
+| 409    | `not-settable-in-mode` | The setting cannot be changed in the current shooting mode, or the camera accepts no value for it now (empty list: movie mode, no lens...). |
+
+Extensions: `reason`, `property` (`iso`, `aperture`, `shutterSpeed`, `exposureCompensation`, `whiteBalance`), `acceptedValues`,
+`aeMode`, `aeModeCode`, and `errors`: every refused setting (`property`, `value`, `reason`, `acceptedValues`, `detail`).
+With `POST /settings`, nothing is written when a value is refused; when several are, the status is 409 if one of them
+cannot be changed in the current mode (the top level fields then describe that one), 400 otherwise.
+
+Settings that can be changed in each mode (other modes: none, the camera chooses by itself). The EDSDK does not report
+it (the `form`/`access` fields of `EdsGetPropertyDesc` are reserved), hence this table:
+
+| Mode | ISO | Aperture | Shutter speed | Exposure compensation | White balance |
+|------|-----|----------|---------------|-----------------------|---------------|
+| P, A-DEP | ✓ | | | ✓ | ✓ |
+| Tv | ✓ | | ✓ | ✓ | ✓ |
+| Av | ✓ | ✓ | | ✓ | ✓ |
+| M | ✓ | ✓ | ✓ | | ✓ |
+| Bulb | ✓ | ✓ | | | ✓ |
+| Fv | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+If the camera refuses a value while `POST /settings` writes it, the problem details list the settings already written in
+`applied` and the one that failed in `failed` (`property`, `value`, `detail`, `errorCode`); the status follows the camera error
+(e.g. 503 when busy or disconnected).
 
 ## Configuration
 
@@ -150,7 +187,7 @@ dotnet run --project Canon.API
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.2.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
+2. **Tag-based releases**: Push a tag like `v1.3.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
 4. **Unit tests**: The workflow runs `Canon.Core.Tests` before packaging
 5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML

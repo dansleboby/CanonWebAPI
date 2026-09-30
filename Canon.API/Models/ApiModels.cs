@@ -27,3 +27,23 @@ public sealed record CameraStatusResponse(
     TemperatureStatus? Temperature,
     FlashStatus? Flash,
     string? Error);
+
+/// <summary>
+/// Settings to apply with POST /settings. Omitted (or null) settings are left unchanged.
+/// </summary>
+/// <param name="Iso">ISO speed (e.g. "Auto", "400").</param>
+/// <param name="Aperture">Aperture (e.g. "5.6").</param>
+/// <param name="ShutterSpeed">Shutter speed (e.g. "1/125").</param>
+/// <param name="WhiteBalance">White balance (e.g. "Auto", "Daylight").</param>
+public sealed record CameraSettingsRequest(string? Iso = null, string? Aperture = null, string? ShutterSpeed = null, string? WhiteBalance = null)
+{
+    public Dictionary<CameraProperty, string> ToDictionary()
+    {
+        var settings = new Dictionary<CameraProperty, string>();
+        if (Iso != null) settings[CameraProperty.ISOSpeed] = Iso;
+        if (Aperture != null) settings[CameraProperty.Aperture] = Aperture;
+        if (ShutterSpeed != null) settings[CameraProperty.ShutterSpeed] = ShutterSpeed;
+        if (WhiteBalance != null) settings[CameraProperty.WhiteBalance] = WhiteBalance;
+        return settings;
+    }
+}

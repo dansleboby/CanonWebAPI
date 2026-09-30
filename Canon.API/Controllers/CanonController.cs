@@ -10,7 +10,8 @@ namespace Canon.API.Controllers;
 
 /// <summary>
 /// Camera control endpoints. Errors are returned as problem details (see <see cref="Infrastructure.CameraExceptionHandler"/>):
-/// 400 invalid value, 409 capture refused by the camera, 503 camera not connected or busy, 504 capture timeout.
+/// 400 invalid value, 409 capture refused by the camera or setting locked by the shooting mode, 503 camera not connected or busy,
+/// 504 capture timeout.
 /// </summary>
 [ApiController]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
@@ -98,6 +99,37 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
         return Ok();
     }
 
+    private const string SetterErrors =
+        "Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now " +
+        "(\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode or the camera accepts no value now (\"not-settable-in-mode\"). " +
+        "The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.";
+
+    [HttpGet("settings")]
+    [EndpointSummary("Shooting mode, ISO, aperture, shutter speed and white balance in one call")]
+    [EndpointDescription("For each setting: current value, values the camera accepts now, and whether it can be changed now (settable: allowed by the shooting mode and at least one value accepted by the camera).")]
+    [ProducesResponseType<CameraSettings>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> GetSettings() => Ok(await camera.GetSettingsAsync());
+
+    [HttpPost("settings")]
+    [EndpointSummary("Apply several settings at once (e.g. a day / night preset)")]
+    [EndpointDescription(
+        "Every value is checked before anything is written; when one is refused nothing is written and the problem details list " +
+        "every refused setting in 'errors' (property, value, reason, acceptedValues, detail). 409 when one of them cannot be changed " +
+        "in the current shooting mode, 400 otherwise. Values are then written in a fixed order (iso, aperture, shutterSpeed, " +
+        "whiteBalance), never during a capture. If a write fails, the problem details list the settings already written in " +
+        "'applied' and the one that failed in 'failed'. On success, returns the settings read back from the camera, as GET /settings.")]
+    [ProducesResponseType<CameraSettings>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> SetSettings([Required][FromBody] CameraSettingsRequest request, CancellationToken cancellationToken)
+    {
+        var settings = request.ToDictionary();
+        logger.LogInformation("Applying settings {Settings}", string.Join(", ", settings.Select(s => $"{s.Key.ToSettingName()}={s.Value}")));
+
+        await camera.ApplySettingsAsync(settings, cancellationToken);
+        return Ok(await camera.GetSettingsAsync());
+    }
+
     [HttpGet("iso")]
     [EndpointSummary("Current ISO speed and supported values")]
     [ProducesResponseType<PropertyValueResponse>(StatusCodes.Status200OK, "application/json")]
@@ -105,8 +137,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("iso")]
     [EndpointSummary("Set the ISO speed (e.g. \"Auto\", \"400\")")]
+    [EndpointDescription(SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<IActionResult> SetIso([Required][FromBody] string value) => SetValue(CameraProperty.ISOSpeed, value);
 
     [HttpGet("aperture")]
@@ -116,8 +150,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("aperture")]
     [EndpointSummary("Set the aperture (e.g. \"5.6\")")]
+    [EndpointDescription(SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<IActionResult> SetAperture([Required][FromBody] string value) => SetValue(CameraProperty.Aperture, value);
 
     [HttpGet("shutterspeed")]
@@ -127,8 +163,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("shutterspeed")]
     [EndpointSummary("Set the shutter speed (e.g. \"1/125\", \"2\\\"\")")]
+    [EndpointDescription(SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<IActionResult> SetShutterSpeed([Required][FromBody] string value) => SetValue(CameraProperty.ShutterSpeed, value);
 
     [HttpGet("exposure")]
@@ -138,9 +176,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("exposure")]
     [EndpointSummary("Set the exposure compensation (e.g. \"0\", \"+1/3\", \"-1 2/3\")")]
-    [EndpointDescription("Not available in manual exposure mode.")]
+    [EndpointDescription("Not available in manual exposure mode, nor in the basic zone modes. " + SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<IActionResult> SetExposureCompensation([Required][FromBody] string value) => SetValue(CameraProperty.ExposureCompensation, value);
 
     [HttpGet("whitebalance")]
@@ -150,8 +189,10 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpPost("whitebalance")]
     [EndpointSummary("Set the white balance (e.g. \"Auto\", \"Daylight\")")]
+    [EndpointDescription(SetterErrors)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<IActionResult> SetWhiteBalance([Required][FromBody] string value) => SetValue(CameraProperty.WhiteBalance, value);
 
     /// <param name="useAutoFocus">Focus before shooting (default true).</param>
