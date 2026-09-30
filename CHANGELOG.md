@@ -7,6 +7,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+## [1.4.0.0] - 2026-09-30
+
 ### Added
 - `appsettings.Local.json` (next to `appsettings.json`) for the settings of a photo booth. It is not part of the release
   package, so automatic updates no longer reset them: move any setting changed in `appsettings.json` to this file.
@@ -213,7 +215,8 @@ First release.
 - Automatic updates with AutoUpdater.NET, from GitHub releases.
 - CI/CD workflow building the release package.
 
-[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.3.0.0...HEAD
+[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.4.0.0...HEAD
+[1.4.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.3.0.0...v1.4.0.0
 [1.3.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.2.0.0...v1.3.0.0
 [1.2.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...v1.2.0.0
 [1.1.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.0.0.11...v1.1.0.0
