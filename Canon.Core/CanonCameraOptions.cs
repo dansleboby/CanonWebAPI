@@ -45,6 +45,19 @@ public sealed class CanonCameraOptions
     public bool PreventAutoPowerOff { get; set; } = true;
 
     /// <summary>
+    /// Sets the "flash firing" camera setting to Fire when the camera connects and before every capture,
+    /// so a flash on the accessory shoe always fires even if the setting was changed on the camera.
+    /// The camera must be in a creative zone mode (P, Tv, Av, M).
+    /// </summary>
+    public bool ForceFlashFiring { get; set; } = true;
+
+    /// <summary>
+    /// Target of the flash settings (kEdsPropID_Flash_Target): "Unspecified" (default, e.g. studio flash triggered
+    /// by the center contact of the accessory shoe) or "External" (flash communicating with the camera).
+    /// </summary>
+    public string FlashTarget { get; set; } = "Unspecified";
+
+    /// <summary>
     /// Number of attempts when the camera answers "device busy".
     /// </summary>
     public int BusyRetryCount { get; set; } = 3;

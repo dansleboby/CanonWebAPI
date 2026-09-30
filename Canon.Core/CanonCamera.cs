@@ -35,6 +35,9 @@ public sealed class CanonCamera : IDisposable
     // Only accessed on the Canon thread.
     private bool _sdkInitialized;
     private nint _cameraRef;
+    private nint _flashRef;
+    private bool? _flashFiring;
+    private volatile string? _flashError;
 
     private volatile bool _connected;
     private volatile bool _liveViewActive;
@@ -209,6 +212,8 @@ public sealed class CanonCamera : IDisposable
         _connected = true;
         _liveViewActive = false;
 
+        InitializeFlash(camera);
+
         EDSDK.EdsGetDeviceInfo(camera, out var info);
         _logger?.LogInformation("Connected to camera {Camera}", info.szDeviceDescription);
         RaiseConnectionChanged(true);
@@ -234,6 +239,14 @@ public sealed class CanonCamera : IDisposable
             return;
 
         _cameraRef = nint.Zero;
+
+        if (_flashRef != nint.Zero)
+        {
+            EDSDK.EdsRelease(_flashRef);
+            _flashRef = nint.Zero;
+        }
+        _flashFiring = null;
+
         EDSDK.EdsCloseSession(camera);
         EDSDK.EdsRelease(camera);
 
@@ -727,6 +740,10 @@ public sealed class CanonCamera : IDisposable
         {
             await WaitForPendingTransfersAsync(cancellationToken);
 
+            // The setting may have been changed on the camera, and the SDK does not report it: set it again.
+            if (_options.ForceFlashFiring)
+                await RunAsync(camera => TrySetFlashFiring(camera, true));
+
             var timeout = await GetCaptureTimeout();
             var pending = new PendingCapture(acceptedTypes);
             _pendingCapture = pending;
@@ -809,6 +826,103 @@ public sealed class CanonCamera : IDisposable
 
         return timeout;
     }
+
+    #endregion
+
+    #region Flash
+
+    /// <summary>
+    /// Creates the flash settings object and, if configured, sets flash firing to Fire. Runs on the Canon thread.
+    /// </summary>
+    private void InitializeFlash(nint camera)
+    {
+        var err = EDSDK.EdsCreateFlashSettingRef(camera, out var flashRef);
+        if (err != EDSDK.EDS_ERR_OK || flashRef == nint.Zero)
+        {
+            _flashError = $"Flash settings not available: {EdsdkHelper.GetErrorMessage(err)}";
+            _logger?.LogInformation("{Error}", _flashError);
+            return;
+        }
+
+        _flashRef = flashRef;
+        _flashError = null;
+
+        if (_options.ForceFlashFiring)
+            TrySetFlashFiring(camera, true);
+    }
+
+    /// <summary>
+    /// Sets flash firing without throwing; a failure is logged and reported in <see cref="GetFlashStatus"/>.
+    /// </summary>
+    private void TrySetFlashFiring(nint camera, bool firing)
+    {
+        try
+        {
+            SetFlashFiringCore(camera, firing);
+        }
+        catch (EdsException e)
+        {
+            _logger?.LogWarning("Could not set flash firing to {Firing}: {Message}", firing ? "Fire" : "Off", e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Sets kEdsPropID_Flash_Target then kEdsPropID_Flash_Firing (EDSDK API reference 6.32).
+    /// The camera UI must be locked while the flash properties are set.
+    /// </summary>
+    private void SetFlashFiringCore(nint camera, bool firing)
+    {
+        try
+        {
+            if (_flashRef == nint.Zero)
+                throw new EdsException(EDSDK.EDS_ERR_NOT_SUPPORTED, _flashError ?? "Flash settings not available");
+
+            var target = string.Equals(_options.FlashTarget, "External", StringComparison.OrdinalIgnoreCase) ? 1u : 0u;
+
+            EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UILock, 1).ThrowIfEdSdkError("Could not lock the camera UI");
+
+            try
+            {
+                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Target, 0, sizeof(uint), target)
+                    .ThrowIfEdSdkError("Could not set the flash target");
+                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, sizeof(uint), firing ? 1u : 0u)
+                    .ThrowIfEdSdkError("Could not set flash firing (the camera must be in P, Tv, Av or M)");
+            }
+            finally
+            {
+                EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UIUnLock, 0);
+            }
+
+            _flashFiring = firing;
+            _flashError = null;
+        }
+        catch (EdsException e)
+        {
+            _flashError = e.Message;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets the state of the "flash firing" setting, as last set by the API.
+    /// </summary>
+    public Task<FlashStatus> GetFlashStatus() => RunAsync(_ =>
+    {
+        var firing = _flashFiring;
+
+        // The SDK only returns a value once it has been set remotely (EDSDK API reference 6.32.2).
+        if (firing.HasValue && _flashRef != nint.Zero
+            && EDSDK.EdsGetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, out uint value) == EDSDK.EDS_ERR_OK)
+            firing = value != 0;
+
+        return new FlashStatus(_flashRef != nint.Zero, firing, _options.ForceFlashFiring, _flashError);
+    });
+
+    /// <summary>
+    /// Sets the "flash firing" camera setting (Fire or Off).
+    /// With <see cref="CanonCameraOptions.ForceFlashFiring"/>, it is set back to Fire before the next capture.
+    /// </summary>
+    public Task SetFlashFiringAsync(bool firing) => RunWithBusyRetryAsync(camera => SetFlashFiringCore(camera, firing));
 
     #endregion
 

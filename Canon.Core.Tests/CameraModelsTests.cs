@@ -57,6 +57,37 @@ public class CameraModelsTests
         Assert.True(status.IsWarning);
     }
 
+    [Theory]
+    [InlineData("fire", true)]
+    [InlineData("FIRE", true)]
+    [InlineData(" on ", true)]
+    [InlineData("true", true)]
+    [InlineData("off", false)]
+    [InlineData("false", false)]
+    public void Flash_values_are_parsed(string text, bool expected)
+    {
+        Assert.True(FlashStatus.TryParseFiring(text, out var firing));
+        Assert.Equal(expected, firing);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("auto")]
+    public void Invalid_flash_values_are_rejected(string? text)
+    {
+        Assert.False(FlashStatus.TryParseFiring(text, out _));
+    }
+
+    [Fact]
+    public void Default_options_force_the_flash_on_an_unspecified_target()
+    {
+        var options = new CanonCameraOptions();
+
+        Assert.True(options.ForceFlashFiring);
+        Assert.Equal("Unspecified", options.FlashTarget);
+    }
+
     [Fact]
     public void Default_options_capture_jpeg_only()
     {

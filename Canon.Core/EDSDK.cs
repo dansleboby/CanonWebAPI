@@ -2327,6 +2327,17 @@ internal class EDSDK
     //      Downloads / writes the camera settings file of a remote camera.
     //      Added in EDSDK 13.20.11.
     -----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------------
+    //
+    //  Function:   EdsCreateFlashSettingRef
+    //
+    //  Description:
+    //      Creates the object used to get and set flash-related settings
+    //      (kEdsPropID_Flash_Target, kEdsPropID_Flash_Firing). Added in EDSDK 13.19.0.
+    -----------------------------------------------------------------------------*/
+    [DllImport("EDSDK.dll")]
+    public static extern uint EdsCreateFlashSettingRef(IntPtr inCameraRef, out IntPtr outFlashRef);
+
     [DllImport("EDSDK.dll")]
     public static extern uint EdsGetCsdFileData(IntPtr inCameraRef, IntPtr outStream);
 

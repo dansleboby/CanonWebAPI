@@ -18,6 +18,38 @@ public sealed record CapturedImage(byte[] Data, string FileName, string ContentT
 public sealed record CameraMode(uint AEModeCode, string AEMode, bool IsCreativeZone, bool? IsMovieMode);
 
 /// <summary>
+/// State of the "flash firing" camera setting (kEdsPropID_Flash_Firing).
+/// </summary>
+/// <param name="IsSupported">False when the camera does not expose flash settings (EdsCreateFlashSettingRef failed).</param>
+/// <param name="Firing">
+/// True: Fire, false: Off, null: unknown. The SDK only reports values set remotely:
+/// a change made in the camera menu is not visible until the value is set again by the API.
+/// </param>
+/// <param name="ForcedBeforeCapture">True when the setting is set to Fire before every capture (Canon:ForceFlashFiring).</param>
+/// <param name="LastError">Why the last attempt to set the flash failed, if it did.</param>
+public sealed record FlashStatus(bool IsSupported, bool? Firing, bool ForcedBeforeCapture, string? LastError)
+{
+    /// <summary>
+    /// Parses "fire"/"on"/"true" and "off"/"false" (case-insensitive).
+    /// </summary>
+    public static bool TryParseFiring(string? text, out bool firing)
+    {
+        switch (text?.Trim().ToLowerInvariant())
+        {
+            case "fire" or "on" or "true" or "1" or "enable" or "enabled":
+                firing = true;
+                return true;
+            case "off" or "false" or "0" or "disable" or "disabled":
+                firing = false;
+                return true;
+            default:
+                firing = false;
+                return false;
+        }
+    }
+}
+
+/// <summary>
 /// Restrictions applied by the camera because of its internal temperature (kEdsPropID_TempStatus).
 /// </summary>
 /// <param name="IsSupported">False when the camera does not report its temperature status.</param>

@@ -169,6 +169,116 @@
         }
       }
     },
+    "/flash": {
+      "get": {
+        "tags": [
+          "Canon"
+        ],
+        "summary": "State of the \"flash firing\" setting",
+        "description": "The SDK only reports values set remotely: 'firing' is the value last set by the API (null before the first one). A change made in the camera menu is not visible. With Canon:ForceFlashFiring (default), the setting is set to Fire when the camera connects and before every capture.",
+        "responses": {
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlashStatus2"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Canon"
+        ],
+        "summary": "Set the \"flash firing\" setting (\"fire\" or \"off\")",
+        "description": "The camera must be in P, Tv, Av or M. With Canon:ForceFlashFiring (default), the setting is set back to Fire before the next capture.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlashStatus2"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/iso": {
       "get": {
         "tags": [
@@ -1002,6 +1112,7 @@
           "liveViewClients",
           "mode",
           "temperature",
+          "flash",
           "error"
         ],
         "type": "object",
@@ -1026,7 +1137,61 @@
           "temperature": {
             "$ref": "#/components/schemas/TemperatureStatus"
           },
+          "flash": {
+            "$ref": "#/components/schemas/FlashStatus"
+          },
           "error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "FlashStatus": {
+        "required": [
+          "isSupported",
+          "firing",
+          "forcedBeforeCapture",
+          "lastError"
+        ],
+        "type": "object",
+        "properties": {
+          "isSupported": {
+            "type": "boolean"
+          },
+          "firing": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "forcedBeforeCapture": {
+            "type": "boolean"
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "nullable": true
+      },
+      "FlashStatus2": {
+        "required": [
+          "isSupported",
+          "firing",
+          "forcedBeforeCapture",
+          "lastError"
+        ],
+        "type": "object",
+        "properties": {
+          "isSupported": {
+            "type": "boolean"
+          },
+          "firing": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "forcedBeforeCapture": {
+            "type": "boolean"
+          },
+          "lastError": {
             "type": "string",
             "nullable": true
           }

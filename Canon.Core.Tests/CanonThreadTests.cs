@@ -77,10 +77,17 @@ public class CanonThreadTests
     {
         var thread = new CanonThread(pumpEvents: () => { });
         var blocker = new ManualResetEventSlim();
+        var started = new ManualResetEventSlim();
 
-        var running = thread.InvokeAsync(() => blocker.Wait(TimeSpan.FromSeconds(5)));
+        var running = thread.InvokeAsync(() =>
+        {
+            started.Set();
+            return blocker.Wait(TimeSpan.FromSeconds(5));
+        });
         var pending = thread.InvokeAsync(() => 1);
 
+        // The first task is running and the second one is still queued when Dispose is called.
+        Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
         var dispose = Task.Run(thread.Dispose);
         await Task.Delay(100);
         blocker.Set();

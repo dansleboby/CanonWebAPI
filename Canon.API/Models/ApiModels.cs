@@ -16,6 +16,7 @@ public sealed record PropertyValueResponse(string Value, IReadOnlyList<string> S
 /// <param name="LiveViewClients">Number of clients connected to /videostream.</param>
 /// <param name="Mode">Shooting mode, when connected.</param>
 /// <param name="Temperature">Temperature restrictions, when connected.</param>
+/// <param name="Flash">State of the "flash firing" setting, when connected.</param>
 /// <param name="Error">Why the camera state could not be read, if it could not.</param>
 public sealed record CameraStatusResponse(
     bool Connected,
@@ -24,4 +25,5 @@ public sealed record CameraStatusResponse(
     int LiveViewClients,
     CameraMode? Mode,
     TemperatureStatus? Temperature,
+    FlashStatus? Flash,
     string? Error);

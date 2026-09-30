@@ -43,11 +43,12 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
                 LiveViewClients: liveView.SubscriberCount,
                 Mode: await camera.GetMode(),
                 Temperature: await camera.GetTemperatureStatus(),
+                Flash: await camera.GetFlashStatus(),
                 Error: null));
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            return Ok(new CameraStatusResponse(camera.IsConnected, null, camera.IsLiveViewActive, liveView.SubscriberCount, null, null, e.Message));
+            return Ok(new CameraStatusResponse(camera.IsConnected, null, camera.IsLiveViewActive, liveView.SubscriberCount, null, null, null, e.Message));
         }
     }
 
@@ -62,6 +63,27 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
     [EndpointDescription("Restrictions applied by the camera because of its internal temperature. 'isSupported' is false when the camera does not report it.")]
     [ProducesResponseType<TemperatureStatus>(StatusCodes.Status200OK, "application/json")]
     public async Task<IActionResult> GetTemperature() => Ok(await camera.GetTemperatureStatus());
+
+    [HttpGet("flash")]
+    [EndpointSummary("State of the \"flash firing\" setting")]
+    [EndpointDescription("The SDK only reports values set remotely: 'firing' is the value last set by the API (null before the first one). A change made in the camera menu is not visible. With Canon:ForceFlashFiring (default), the setting is set to Fire when the camera connects and before every capture.")]
+    [ProducesResponseType<FlashStatus>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> GetFlash() => Ok(await camera.GetFlashStatus());
+
+    [HttpPost("flash")]
+    [EndpointSummary("Set the \"flash firing\" setting (\"fire\" or \"off\")")]
+    [EndpointDescription("The camera must be in P, Tv, Av or M. With Canon:ForceFlashFiring (default), the setting is set back to Fire before the next capture.")]
+    [ProducesResponseType<FlashStatus>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    public async Task<IActionResult> SetFlash([Required][FromBody] string value)
+    {
+        if (!FlashStatus.TryParseFiring(value, out var firing))
+            throw new ArgumentException($"Invalid flash value '{value}'. Use \"fire\" or \"off\".", nameof(value));
+
+        logger.LogInformation("Setting flash firing to {Firing}", firing ? "Fire" : "Off");
+        await camera.SetFlashFiringAsync(firing);
+        return Ok(await camera.GetFlashStatus());
+    }
 
     private async Task<IActionResult> GetValue(CameraProperty property)
     {
