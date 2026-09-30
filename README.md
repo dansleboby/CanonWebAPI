@@ -6,17 +6,19 @@ A web API for remotely controlling Canon DSLR and mirrorless cameras. This proje
 
 ## Features
 
-*   Get camera information (e.g., camera name).
+*   Get camera information (e.g., camera name, shooting mode, temperature restrictions).
 *   Get and set camera settings:
     *   ISO Speed
     *   Aperture
     *   Shutter Speed
     *   Exposure Compensation
     *   White Balance
-*   Take pictures and download them.
-*   Live view streaming via MJPEG.
+*   Take pictures and download them (JPEG by default, other file types on request).
+*   Live view streaming via MJPEG, shared by every connected client.
 *   Trigger autofocus.
-*   Retrieve the last taken picture from the camera.
+*   Retrieve the last taken picture.
+*   Automatic reconnection when the camera is turned off or unplugged and plugged back (hot plug).
+*   OpenAPI document and Swagger UI.
 *   **Automatic updates** via AutoUpdater.NET integration.
 *   **Version display** in console on startup.
 
@@ -26,9 +28,10 @@ The solution is divided into the following projects:
 
 *   `Canon.API`: An ASP.NET Core web application that exposes the camera controls as a RESTful API.
 *   `Canon.Core`: A .NET library that wraps the Canon EDSDK, providing a higher-level interface to interact with the camera.
+*   `Canon.Core.Tests`: Unit tests (xUnit) of `Canon.Core` that do not need a camera.
 *   `Canon.Test`: A simple console application for testing the `Canon.Core` library.
 *   `Canon.Test.Avalonia`: A desktop application built with Avalonia UI for testing camera functionalities.
-*   `EDSDK`: Contains the necessary Canon EDSDK libraries (`EDSDK.dll`, `EdsImage.dll`).
+*   `EDSDK`: Contains the Canon EDSDK 13.20.21 64-bit libraries (`EDSDK.dll`, `EdsImage.dll`).
 
 ## Getting Started
 
@@ -49,25 +52,63 @@ The solution is divided into the following projects:
 
 ## API Endpoints
 
-The following endpoints are available once the `Canon.API` project is running:
+The following endpoints are available once the `Canon.API` project is running.
+The OpenAPI document is served at `/openapi/v1.json` (a copy is kept in [`docs/openapi.json`](docs/openapi.json)) and the Swagger UI at `/swagger`.
+
+Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: application/json`.
 
 | Method | Path                         | Description                                             | Request Body (Example) |
 |--------|------------------------------|---------------------------------------------------------|------------------------|
+| GET    | `/status`                    | Connection state, camera name, shooting mode, temperature and live view state. Never fails because of the camera. | N/A |
 | GET    | `/cameraname`                | Gets the connected camera's name.                       | N/A                    |
+| GET    | `/mode`                      | Gets the shooting mode (mode dial position, whether exposure settings can be changed, movie mode). | N/A |
+| GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
-| POST   | `/iso`                       | Sets the ISO speed.                                     | `{"value": "100"}`     |
+| POST   | `/iso`                       | Sets the ISO speed.                                     | `"100"`                |
 | GET    | `/aperture`                  | Gets the current aperture and a list of supported values. | N/A                    |
-| POST   | `/aperture`                  | Sets the aperture.                                      | `{"value": "5.6"}`     |
+| POST   | `/aperture`                  | Sets the aperture.                                      | `"5.6"`                |
 | GET    | `/shutterspeed`              | Gets the current shutter speed and a list of supported values. | N/A                    |
-| POST   | `/shutterspeed`              | Sets the shutter speed.                                 | `{"value": "1/125"}`   |
+| POST   | `/shutterspeed`              | Sets the shutter speed.                                 | `"1/125"`              |
 | GET    | `/exposure`                  | Gets the current exposure compensation and supported values. | N/A                    |
-| POST   | `/exposure`                  | Sets the exposure compensation.                         | `{"value": "+1"}`      |
+| POST   | `/exposure`                  | Sets the exposure compensation (not available in manual mode). | `"+1/3"`         |
 | GET    | `/whitebalance`              | Gets the current white balance and supported values.    | N/A                    |
-| POST   | `/whitebalance`              | Sets the white balance.                                 | `{"value": "Auto"}`    |
-| POST   | `/takepicture`               | Takes a picture and returns the JPEG image. The `useAutoFocus` query parameter (default `true`) can be used to control autofocus. | N/A |
-| GET    | `/videostream`               | Starts an MJPEG live view stream.                       | N/A                    |
-| GET    | `/latestpicture`             | Gets the last picture taken from the camera's memory.   | N/A                    |
+| POST   | `/whitebalance`              | Sets the white balance.                                 | `"Auto"`               |
+| POST   | `/takepicture`               | Takes a picture and returns the file (JPEG by default). Query parameters: `useAutoFocus` (default `true`), `fileTypes` (e.g. `cr3`, `jpg,cr3`, `*`). The file name is in the `X-File-Name` header. | N/A |
+| GET    | `/videostream`               | MJPEG live view stream. Several clients share the same frames. | N/A             |
+| GET    | `/liveview`                  | A single live view image (JPEG).                        | N/A                    |
+| GET    | `/latestpicture`             | Gets the last picture received from the camera.         | N/A                    |
 | POST   | `/autofocus`                 | Triggers the camera's autofocus mechanism.              | N/A                    |
+
+Values the camera does not know a label for are returned as raw hexadecimal values (e.g. `"0x99"`), which can also be sent back.
+
+### Errors
+
+Errors are returned as [problem details](https://www.rfc-editor.org/rfc/rfc9457) (`application/problem+json`) with the EDSDK error code in `errorCode` when there is one:
+
+| Status | Meaning |
+|--------|---------|
+| 400    | Invalid value, or value not accepted by the camera now (the message lists the accepted values). |
+| 404    | No picture / live view image available. |
+| 409    | The camera refused to take the picture (focus failure, no lens, movie mode...). |
+| 503    | Camera not connected, or busy (`Retry-After` header). |
+| 504    | The camera did not deliver the picture in time. |
+
+## Configuration
+
+Settings are read from `appsettings.json` (next to the executable) or environment variables (e.g. `Canon__CaptureFileTypes__0=jpg`).
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Canon:CaptureFileTypes` | `["jpg"]` | File types downloaded after a capture, in order of preference (`jpg`, `heif`, `cr3`, `*`...). Other files are cancelled on the camera. Can be overridden per request with `fileTypes`. |
+| `Canon:CaptureTimeoutSeconds` | `10` | Time allowed to receive a capture, added to the exposure time of the current shutter speed. |
+| `Canon:AutoFocusHoldMilliseconds` | `800` | How long `/autofocus` holds the shutter button halfway. |
+| `Canon:LiveViewSmallImage` | `false` | Uses the smaller live view image (less bandwidth, lower resolution; not supported by every camera). |
+| `Canon:KeepCameraScreenOn` | `false` | Keeps the camera screen on during the live view. When `false`, the live view is sent to the PC only, which turns the camera screen off and locks its buttons. |
+| `Canon:PreventAutoPowerOff` | `true` | Extends the camera auto power off timer when the camera announces it will turn off. |
+| `Canon:BusyRetryCount` / `BusyRetryDelayMilliseconds` | `3` / `500` | Retries when the camera answers "device busy". |
+| `LiveView:FrameIntervalMilliseconds` | `30` | Delay between two live view frames. |
+| `LiveView:IdleStopDelayMilliseconds` | `3000` | The camera live view stops this long after the last `/videostream` client left. |
+| `AutoUpdate:Enabled` | `true` | Checks for updates at startup. |
 
 ## Automatic Updates
 
@@ -119,6 +160,43 @@ dotnet run --project Canon.Test
 dotnet run --project Canon.Test.Avalonia
 ```
 
+### Unit Tests
+
+```bash
+dotnet test Canon.Core.Tests
+```
+
+The tests cover the value tables, the capture timeout, the file type filter, the SDK thread and the live view broadcaster. They do not need a camera and also run on Linux/macOS.
+
+### Docker (Windows containers)
+
+The `Dockerfile` builds, tests and publishes the application in a Windows container (Docker Desktop in *Windows containers* mode, or Windows Server):
+
+```powershell
+# Build + unit tests only
+docker build --target test -t canonwebapi:test .
+
+# Build + tests + publish, then a runtime image for smoke tests
+docker build -t canonwebapi .
+docker run --rm -p 5159:5159 canonwebapi
+# http://localhost:5159/status, http://localhost:5159/swagger
+
+# Extract the published executable (same files as the GitHub release)
+docker create --name canonwebapi-publish canonwebapi
+docker cp canonwebapi-publish:C:\app .\publish
+docker rm canonwebapi-publish
+```
+
+Windows containers cannot access USB devices, so the camera is not reachable from a container: `/status` reports `connected: false`. Tests with a camera are done on the photo booth machine.
+
+### OpenAPI Document
+
+The document is always available at `/openapi/v1.json`. To regenerate `docs/openapi.json` at build time (on Windows):
+
+```bash
+dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
+```
+
 ## Compatibility
 
 ### Tested Camera Models
@@ -126,8 +204,8 @@ dotnet run --project Canon.Test.Avalonia
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows (x64)
+*   **OS**: Windows 10/11 (x64)
 *   **Runtime**: .NET 9 or newer
-*   **Dependencies**: Canon EDSDK libraries (included)
+*   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included)
 
 > **Note**: While this software has been tested with the above camera models, it should work with other Canon cameras that support the EDSDK. However, functionality may vary depending on the specific camera model and its supported features.

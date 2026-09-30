@@ -1,6 +1,34 @@
 @Canon.API_HostAddress = http://localhost:5159
 
-GET {{Canon.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Camera state (connection, shooting mode, temperature, live view)
+GET {{Canon.API_HostAddress}}/status
+
+### Shooting mode
+GET {{Canon.API_HostAddress}}/mode
+
+### Temperature restrictions
+GET {{Canon.API_HostAddress}}/temperature
+
+### ISO
+GET {{Canon.API_HostAddress}}/iso
 
 ###
+POST {{Canon.API_HostAddress}}/iso
+Content-Type: application/json
+
+"400"
+
+### Exposure compensation
+POST {{Canon.API_HostAddress}}/exposure
+Content-Type: application/json
+
+"+1/3"
+
+### Take a picture (JPEG by default)
+POST {{Canon.API_HostAddress}}/takepicture?useAutoFocus=true
+
+### Take a picture, returning the RAW file
+POST {{Canon.API_HostAddress}}/takepicture?fileTypes=cr3
+
+### OpenAPI document
+GET {{Canon.API_HostAddress}}/openapi/v1.json

@@ -89,6 +89,9 @@ jobs:
       
     - name: Build solution
       run: dotnet build CanonSDK.sln --configuration Release --no-restore
+
+    - name: Run unit tests
+      run: dotnet test Canon.Core.Tests/Canon.Core.Tests.csproj --configuration Release --no-build
       
     - name: Publish Canon.API as standalone executable
       run: dotnet publish Canon.API/Canon.API.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish
