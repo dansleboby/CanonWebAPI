@@ -114,7 +114,7 @@ The application includes AutoUpdater.NET with these configurations:
 
 ## Release Process
 
-The project uses GitHub Actions for automated releases:
+The project uses GitHub Actions for automated releases (record every change in the `Unreleased` section of `CHANGELOG.md`; never edit `docs/autoupdate.xml` by hand):
 - Trigger: Push tags matching `v*` pattern
 - Workflow compares tag version with project file versions
 - Updates project files automatically if versions don't match
