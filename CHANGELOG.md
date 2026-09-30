@@ -7,6 +7,46 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+### Added
+- `appsettings.Local.json` (next to `appsettings.json`) for the settings of a photo booth. It is not part of the release
+  package, so automatic updates no longer reset them: move any setting changed in `appsettings.json` to this file.
+- `exposureCompensation` in `GET /settings` and `POST /settings`.
+- `Canon.API.Tests`: unit tests of the error mapping, the request models and the log levels, run by the CI and release
+  workflows and by the Dockerfile.
+
+### Changed
+- Exposure compensation can be set in manual exposure mode (M) when ISO is Auto (also when `POST /settings` sets ISO
+  to Auto in the same call), as the camera allows. It was always refused in M.
+- An aperture or shutter speed label shared by a 1/2 and a 1/3 stop value (e.g. `"2.5"` and `"2.5 (1/3)"`) is set to the
+  one the camera accepts with its current exposure step, instead of being refused.
+- f/4.5 values are labelled like the other pairs: 0x2B (1/3 stop) is now `"4.5 (1/3)"` and 0x2C (1/2 stop) `"4.5"`.
+  Sending `"4.5"` still works with both exposure steps.
+- `POST /flash` waits for a capture or an autofocus in progress to finish.
+- `POST /settings` refuses an unknown field (400) instead of ignoring it, e.g. a misspelled setting.
+- Settings files and logs (`logs/canon-api.log`) are next to the executable whatever the working directory (shortcut,
+  scheduled task...); `appsettings.json` was only read from the working directory.
+- `Logging:LogLevel` applies to the logs: it was ignored, and every request was logged by ASP.NET Core.
+- `Retry-After` can be read by browser clients (CORS).
+- OpenAPI document: HEIF and CR3 content types for `/takepicture` and `/latestpicture`, 409 for `/autofocus` and
+  `POST /flash`, no 503 for `/status` and `/latestpicture`.
+- The update check no longer tries to stop the web server before updating: it runs before the server starts.
+
+### Fixed
+- Automatic updates overwrote `appsettings.json`, resetting the settings of the photo booth (see `appsettings.Local.json`).
+- `Canon:CaptureFileTypes` always included `jpg`: the configured types were added to the default one instead of replacing
+  it (e.g. `["cr3"]` also accepted JPEG files). The documentation no longer claims an order of preference: the first
+  matching file the camera sends is returned.
+- An open `/videostream` delayed the application shutdown by 30 s; closing the window during that time left the camera
+  session open. Streams now end as soon as the application stops.
+- The file of a capture whose request was cancelled by the client could answer the next capture.
+- `/liveview` could return a frame up to a few seconds old after the last `/videostream` client left, or a frame of a
+  previous live view.
+- EDSDK wrapper declarations not used by the application, aligned with the 13.20.21 headers: `EdsWrite` (64-bit written
+  size), `EdsCreateFileStreamEx` (declared under a name the DLL does not export), `EdsSetFramePoint`, `FocusShiftSetting`
+  (8 fields) and `EdsManualWBData` (header layout and serialization helpers).
+- Unit tests that could not detect the regression they were written for (live view errors, shared live view producer)
+  or depended on timing (SDK thread disposal).
+
 ## [1.3.0.0] - 2026-09-30
 
 ### Added

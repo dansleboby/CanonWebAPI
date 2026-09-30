@@ -66,14 +66,32 @@ public class LiveViewBroadcasterTests
         await using var broadcaster = Create(camera);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var first = Read(broadcaster, 20, timeout.Token);
-        var second = Read(broadcaster, 20, timeout.Token);
-        await Task.WhenAll(first, second);
+        var clients = await Task.WhenAll(Read(broadcaster, 20, timeout.Token), Read(broadcaster, 20, timeout.Token));
 
         Assert.Equal(1, camera.Starts);
-        // Each frame is downloaded once and shared: far fewer downloads than frames delivered.
-        Assert.True(camera.FramesRequested < 40 + 10, $"{camera.FramesRequested} frames requested");
-        Assert.NotNull(broadcaster.LatestFrame);
+        // Every download returns a new frame number: clients downloading their own frames would share none.
+        Assert.NotEmpty(clients[0].Select(f => f[0]).Intersect(clients[1].Select(f => f[0])));
+    }
+
+    [Fact]
+    public async Task Latest_frame_is_only_kept_while_a_client_streams()
+    {
+        var camera = new FakeCamera();
+        await using var broadcaster = Create(camera, idleStopDelay: 5000);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await foreach (var _ in broadcaster.ReadFramesAsync(timeout.Token))
+        {
+            Assert.NotNull(broadcaster.LatestFrame);
+            break;
+        }
+
+        // The live view keeps running during the idle delay, but no frame is downloaded anymore.
+        while (broadcaster.LatestFrame != null && !timeout.IsCancellationRequested)
+            await Task.Delay(5);
+
+        Assert.Null(broadcaster.LatestFrame);
+        Assert.True(broadcaster.IsRunning);
     }
 
     [Fact]
@@ -127,9 +145,31 @@ public class LiveViewBroadcasterTests
         var camera = new FakeCamera();
         await using var broadcaster = Create(camera);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var client = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
 
-        await Read(broadcaster, 2, timeout.Token);
+        var reader = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var _ in broadcaster.ReadFramesAsync(client.Token))
+                {
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+
+        while (broadcaster.LatestFrame is null)
+            await Task.Delay(5, timeout.Token);
+
+        // The downloads fail while the client is still connected, then the client leaves.
         camera.FailuresToSimulate = int.MaxValue;
+        var requested = camera.FramesRequested;
+        while (camera.FramesRequested < requested + 2)
+            await Task.Delay(5, timeout.Token);
+        await client.CancelAsync();
+        await reader;
 
         while (broadcaster.IsRunning && !timeout.IsCancellationRequested)
             await Task.Delay(10);

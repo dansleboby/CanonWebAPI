@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Configuration binder, to test how the options bind from appsettings.json. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

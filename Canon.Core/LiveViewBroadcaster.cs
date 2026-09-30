@@ -86,7 +86,8 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
     }
 
     /// <summary>
-    /// The last frame downloaded, if any.
+    /// The last frame downloaded, while at least one client streams. Null when no client streams: no frame is
+    /// downloaded then, so the last one would be stale.
     /// </summary>
     public byte[]? LatestFrame => _latestFrame;
 
@@ -155,6 +156,7 @@ public sealed class LiveViewBroadcaster : IAsyncDisposable
                 if (subscribers.Length == 0)
                 {
                     idleSince ??= DateTime.UtcNow;
+                    _latestFrame = null;
 
                     if (DateTime.UtcNow - idleSince >= idleDelay || token.IsCancellationRequested)
                     {

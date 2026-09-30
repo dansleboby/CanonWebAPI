@@ -195,8 +195,8 @@ internal static class EdsdkHelper
         { 0x24, "3.5" },
         { 0x25, "3.5 (1/3)" },
         { 0x28, "4" },
-        { 0x2B, "4.5" },
-        { 0x2C, "4.5 (1/3)" },
+        { 0x2B, "4.5 (1/3)" },
+        { 0x2C, "4.5" },
         { 0x2D, "5.0" },
         { 0x30, "5.6" },
         { 0x33, "6.3" },
@@ -587,6 +587,24 @@ internal static class EdsdkHelper
         return false;
     }
 
+    private const string OneThirdStopSuffix = " (1/3)";
+
+    /// <summary>
+    /// Values of the other exposure step whose label reads the same as <paramref name="label"/>, e.g. aperture "2.5"
+    /// gives 0x1D ("2.5 (1/3)") and "2.5 (1/3)" gives 0x1C ("2.5"). Empty for raw values and labels without a pair.
+    /// </summary>
+    public static IEnumerable<uint> GetSameLabelValues(this uint propId, string label)
+    {
+        label = label.Trim();
+        var pair = label.EndsWith(OneThirdStopSuffix, StringComparison.OrdinalIgnoreCase)
+            ? label[..^OneThirdStopSuffix.Length]
+            : label + OneThirdStopSuffix;
+
+        return DescriptionsByProperty.TryGetValue(propId, out var descriptions) && descriptions.TryGetValue(pair, out var value)
+            ? [value]
+            : [];
+    }
+
     /// <summary>
     /// Gets the exposure duration in seconds of a kEdsPropID_Tv value. Returns false for Bulb and unknown values.
     /// </summary>
@@ -597,7 +615,7 @@ internal static class EdsdkHelper
         if (!TvValues.TryGetValue(tvValue, out var label) || tvValue == 0x0C)
             return false;
 
-        label = label.Replace(" (1/3)", string.Empty);
+        label = label.Replace(OneThirdStopSuffix, string.Empty);
         var culture = System.Globalization.CultureInfo.InvariantCulture;
 
         if (label.EndsWith('"'))

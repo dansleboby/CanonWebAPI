@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.API", "Canon.API\Cano
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.Core.Tests", "Canon.Core.Tests\Canon.Core.Tests.csproj", "{F7599AF1-B3CE-4DFD-ACC5-A15919A9AF14}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Canon.API.Tests", "Canon.API.Tests\Canon.API.Tests.csproj", "{0D2C03A3-C98D-48CD-8620-D67277D4B679}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{F7599AF1-B3CE-4DFD-ACC5-A15919A9AF14}.Release|x64.Build.0 = Release|Any CPU
 		{F7599AF1-B3CE-4DFD-ACC5-A15919A9AF14}.Release|x86.ActiveCfg = Release|Any CPU
 		{F7599AF1-B3CE-4DFD-ACC5-A15919A9AF14}.Release|x86.Build.0 = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|x64.Build.0 = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Debug|x86.Build.0 = Debug|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|x64.ActiveCfg = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|x64.Build.0 = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|x86.ActiveCfg = Release|Any CPU
+		{0D2C03A3-C98D-48CD-8620-D67277D4B679}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

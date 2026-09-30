@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Canon.Core.Tests" />
+    <InternalsVisibleTo Include="Canon.API.Tests" />
   </ItemGroup>
 
 </Project>

@@ -416,3 +416,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Operator settings of a local install (see README, Configuration)
+appsettings.Local.json

@@ -8,11 +8,15 @@ public sealed class CanonCameraOptions
     public const string SectionName = "Canon";
 
     /// <summary>
-    /// File types downloaded after a capture, by extension without the dot, in order of preference.
-    /// Default: JPEG only. Other files (RAW, HEIF...) are cancelled so the camera releases them.
+    /// File types downloaded after a capture, by extension without the dot. The first matching file the camera sends
+    /// answers the capture. Empty (default): JPEG only. Other files (RAW, HEIF...) are cancelled so the camera releases them.
     /// "jpg" also matches ".jpeg", "heif" also matches ".hif", "*" accepts every file.
     /// </summary>
-    public string[] CaptureFileTypes { get; set; } = ["jpg"];
+    /// <remarks>
+    /// Empty rather than ["jpg"] by default: the configuration binder appends to an existing array, so a configured
+    /// ["cr3"] would bind as ["jpg", "cr3"].
+    /// </remarks>
+    public string[] CaptureFileTypes { get; set; } = [];
 
     /// <summary>
     /// Time allowed for the camera to deliver a capture, in seconds, on top of the exposure time.

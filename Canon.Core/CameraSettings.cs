@@ -46,6 +46,7 @@ public sealed record CameraSettings(
     CameraSettingState Iso,
     CameraSettingState Aperture,
     CameraSettingState ShutterSpeed,
+    CameraSettingState ExposureCompensation,
     CameraSettingState WhiteBalance);
 
 /// <summary>
@@ -77,12 +78,15 @@ public static class CameraSettingRules
     // kEdsPropID_Tv value of Bulb: it can never be set from a computer (EDSDK API reference, kEdsPropID_Tv).
     private const uint TvBulb = 0x0C;
 
+    /// <summary>kEdsPropID_ISOSpeed value of ISO Auto.</summary>
+    public const uint IsoAuto = 0x00;
+
     /// <summary>
     /// Settings that can be changed in each creative zone mode. In the other (basic zone) modes, the camera sets
     /// capture-related properties by itself and none can be changed (EDSDK API reference, kEdsPropID_AEModeSelect).
     /// EdsGetPropertyDesc does not say whether a setting is locked by the mode (its "form" and "access" fields are
-    /// reserved, always 0, EDSDK 13.20 API reference 3.1.20) nor what it lists in that case, hence this table.
-    /// Exposure compensation is not available in manual exposure mode (EDSDK API reference 5.2.28).
+    /// reserved, always 0, EDSDK 13.20 API reference 3.1.20), hence this table.
+    /// Exposure compensation in manual exposure mode: see <see cref="IsSettableInMode"/>.
     /// </summary>
     private static readonly Dictionary<uint, CameraProperty[]> SettableByMode = new()
     {
@@ -99,8 +103,13 @@ public static class CameraSettingRules
     /// <summary>
     /// True when <paramref name="property"/> can be changed in the AE mode <paramref name="aeMode"/> (kEdsPropID_AEMode value).
     /// </summary>
-    public static bool IsSettableInMode(CameraProperty property, uint aeMode) =>
-        SettableByMode.TryGetValue(aeMode, out var properties) && properties.Contains(property);
+    /// <param name="isoAuto">
+    /// ISO is Auto. In manual exposure mode, exposure compensation only applies with ISO Auto (EOS R user guides);
+    /// the EDSDK API reference (5.2.28) predates it and says it is never available in that mode.
+    /// </param>
+    public static bool IsSettableInMode(CameraProperty property, uint aeMode, bool isoAuto = false) =>
+        (SettableByMode.TryGetValue(aeMode, out var properties) && properties.Contains(property))
+        || (property == CameraProperty.ExposureCompensation && aeMode == Manual && isoAuto);
 
     /// <summary>
     /// True when <paramref name="property"/> can be changed now: allowed by the AE mode, and the camera lists at least
@@ -108,8 +117,8 @@ public static class CameraSettingRules
     /// changed in the current state (movie mode, no lens...): the Canon samples disable the setting in that case,
     /// and the EDSDK API reference asks to set only values from that list. Null means the camera does not list the values.
     /// </summary>
-    public static bool IsSettable(CameraProperty property, uint aeMode, IReadOnlyCollection<uint>? settableValues) =>
-        IsSettableInMode(property, aeMode) && settableValues is not { Count: 0 };
+    public static bool IsSettable(CameraProperty property, uint aeMode, IReadOnlyCollection<uint>? settableValues, bool isoAuto = false) =>
+        IsSettableInMode(property, aeMode, isoAuto) && settableValues is not { Count: 0 };
 
     /// <summary>
     /// Checks a requested value before it is written to the camera.
@@ -122,8 +131,9 @@ public static class CameraSettingRules
     /// the mode are checked. Empty: the setting cannot be changed now (see <see cref="IsSettable"/>).
     /// </param>
     /// <param name="value">The raw value to write, when valid.</param>
+    /// <param name="isoAuto">ISO is Auto once the settings are applied (see <see cref="IsSettableInMode"/>).</param>
     /// <returns>Null when the value can be written, otherwise why it cannot.</returns>
-    public static SettingError? Validate(CameraProperty property, string? requested, uint aeMode, IReadOnlyCollection<uint>? settableValues, out uint value)
+    public static SettingError? Validate(CameraProperty property, string? requested, uint aeMode, IReadOnlyCollection<uint>? settableValues, out uint value, bool isoAuto = false)
     {
         var propId = (uint)property;
         var accepted = (IReadOnlyList<string>)(settableValues ?? []).Select(v => propId.DescribeValue(v)).ToList();
@@ -135,10 +145,11 @@ public static class CameraSettingRules
                 $"Invalid value '{requested}' for {property.ToSettingName()}.");
         }
 
-        if (!IsSettableInMode(property, aeMode))
+        if (!IsSettableInMode(property, aeMode, isoAuto))
         {
             return new SettingError(property, requested, SettingErrorReason.NotSettableInMode, [],
-                $"{property.ToSettingName()} cannot be changed in the current shooting mode ({DescribeAEMode(aeMode)}).");
+                $"{property.ToSettingName()} cannot be changed in the current shooting mode ({DescribeAEMode(aeMode)})"
+                + (property == CameraProperty.ExposureCompensation && aeMode == Manual ? " unless ISO is Auto." : "."));
         }
 
         if (settableValues is { Count: 0 })
@@ -147,6 +158,10 @@ public static class CameraSettingRules
                 $"{property.ToSettingName()} cannot be changed now: the camera lists no settable value in its current state " +
                 $"({DescribeAEMode(aeMode)}; movie mode, lens...).");
         }
+
+        // A label shared by a 1/2 and a 1/3 stop value (e.g. aperture "2.5"): take the one allowed by the current exposure step.
+        if (settableValues != null && !settableValues.Contains(value))
+            value = propId.GetSameLabelValues(requested).FirstOrDefault(settableValues.Contains, value);
 
         if ((settableValues != null && !settableValues.Contains(value)) || (property == CameraProperty.ShutterSpeed && value == TvBulb))
         {

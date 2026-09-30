@@ -54,16 +54,6 @@
         "summary": "Camera connection, shooting mode, temperature and live view state",
         "description": "Never fails because of the camera: when it is not connected, 'connected' is false and 'error' explains why.",
         "responses": {
-          "503": {
-            "description": "Service Unavailable",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -275,6 +265,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -284,7 +284,7 @@
         "tags": [
           "Canon"
         ],
-        "summary": "Shooting mode, ISO, aperture, shutter speed and white balance in one call",
+        "summary": "Shooting mode, ISO, aperture, shutter speed, exposure compensation and white balance in one call",
         "description": "For each setting: current value, values the camera accepts now, and whether it can be changed now (settable: allowed by the shooting mode and at least one value accepted by the camera).",
         "responses": {
           "503": {
@@ -324,7 +324,7 @@
           "Canon"
         ],
         "summary": "Apply several settings at once (e.g. a day / night preset)",
-        "description": "Every value is checked before anything is written; when one is refused nothing is written and the problem details list every refused setting in 'errors' (property, value, reason, acceptedValues, detail). 409 when one of them cannot be changed in the current shooting mode, 400 otherwise. Values are then written in a fixed order (iso, aperture, shutterSpeed, whiteBalance), never during a capture. If a write fails, the problem details list the settings already written in 'applied' and the one that failed in 'failed'. On success, returns the settings read back from the camera, as GET /settings.",
+        "description": "Every value is checked before anything is written; when one is refused nothing is written and the problem details list every refused setting in 'errors' (property, value, reason, acceptedValues, detail). 409 when one of them cannot be changed in the current shooting mode, 400 otherwise. Values are then written in a fixed order (iso, aperture, shutterSpeed, exposureCompensation, whiteBalance), never during a capture. An unknown field is refused (400). If a write fails, the problem details list the settings already written in 'applied' and the one that failed in 'failed'. On success, returns the settings read back from the camera, as GET /settings.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -779,7 +779,7 @@
           "Canon"
         ],
         "summary": "Set the exposure compensation (e.g. \"0\", \"+1/3\", \"-1 2/3\")",
-        "description": "Not available in manual exposure mode, nor in the basic zone modes. Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode or the camera accepts no value now (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
+        "description": "In manual exposure mode, only with ISO Auto; not available in the basic zone modes. Errors: 400 when the label cannot be read (reason \"invalid-value\") or the camera does not accept the value now (\"value-not-accepted\"), 409 when the setting cannot be changed in the current shooting mode or the camera accepts no value now (\"not-settable-in-mode\"). The problem details carry reason, property, acceptedValues, aeMode and aeModeCode.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1014,6 +1014,16 @@
                   "$ref": "#/components/schemas/Stream"
                 }
               },
+              "image/heif": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stream"
+                }
+              },
+              "image/x-canon-cr3": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stream"
+                }
+              },
               "application/octet-stream": {
                 "schema": {
                   "$ref": "#/components/schemas/Stream"
@@ -1051,16 +1061,6 @@
         ],
         "summary": "Last picture received from the camera",
         "responses": {
-          "503": {
-            "description": "Service Unavailable",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -1075,6 +1075,16 @@
             "description": "OK",
             "content": {
               "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stream"
+                }
+              },
+              "image/heif": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stream"
+                }
+              },
+              "image/x-canon-cr3": {
                 "schema": {
                   "$ref": "#/components/schemas/Stream"
                 }
@@ -1128,6 +1138,16 @@
           },
           "200": {
             "description": "OK"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -1285,6 +1305,7 @@
           "iso",
           "aperture",
           "shutterSpeed",
+          "exposureCompensation",
           "whiteBalance"
         ],
         "type": "object",
@@ -1299,6 +1320,9 @@
             "$ref": "#/components/schemas/CameraSettingState"
           },
           "shutterSpeed": {
+            "$ref": "#/components/schemas/CameraSettingState"
+          },
+          "exposureCompensation": {
             "$ref": "#/components/schemas/CameraSettingState"
           },
           "whiteBalance": {
@@ -1330,6 +1354,13 @@
             ],
             "default": null
           },
+          "exposureCompensation": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "default": null
+          },
           "whiteBalance": {
             "type": [
               "null",
@@ -1337,7 +1368,8 @@
             ],
             "default": null
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CameraStatusResponse": {
         "required": [

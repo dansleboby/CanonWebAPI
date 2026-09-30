@@ -89,7 +89,12 @@ public class CanonThreadTests
         // The first task is running and the second one is still queued when Dispose is called.
         Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
         var dispose = Task.Run(thread.Dispose);
-        await Task.Delay(100);
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            // Dispose refuses new work first: the running task is released only once Dispose has started.
+            while (!IsDisposed(thread))
+                await Task.Delay(5, timeout.Token);
+        }
         blocker.Set();
 
         await dispose.WaitAsync(TimeSpan.FromSeconds(5));
@@ -106,6 +111,20 @@ public class CanonThreadTests
             error = e;
         }
         Assert.NotNull(error);
+    }
+
+    private static bool IsDisposed(CanonThread thread)
+    {
+        try
+        {
+            // Queued behind the running task: failed like the other pending tasks once disposed.
+            _ = thread.InvokeAsync(() => 0);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return true;
+        }
     }
 
     [Fact]

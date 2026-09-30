@@ -32,6 +32,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Operator settings: copied next to the executable for dotnet run, never published so an automatic update cannot overwrite them. -->
+    <Content Update="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.3" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />

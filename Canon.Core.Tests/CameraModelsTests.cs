@@ -1,4 +1,5 @@
 using Canon.Core;
+using Microsoft.Extensions.Configuration;
 
 namespace Canon.Core.Tests;
 
@@ -93,8 +94,22 @@ public class CameraModelsTests
     {
         var options = new CanonCameraOptions();
 
-        Assert.Equal(["jpg"], options.CaptureFileTypes);
+        // Empty: CanonCamera falls back to JPEG.
+        Assert.Empty(options.CaptureFileTypes);
         Assert.Equal(10, options.CaptureTimeoutSeconds);
+    }
+
+    [Fact]
+    public void Configured_capture_file_types_replace_the_default()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Canon:CaptureFileTypes:0"] = "cr3" })
+            .Build();
+
+        var options = configuration.GetSection(CanonCameraOptions.SectionName).Get<CanonCameraOptions>();
+
+        Assert.NotNull(options);
+        Assert.Equal(["cr3"], options.CaptureFileTypes);
     }
 
     [Fact]

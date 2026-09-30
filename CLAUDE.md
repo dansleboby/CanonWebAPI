@@ -8,11 +8,12 @@ CanonWebAPI is a .NET 10 web API for remotely controlling Canon DSLR and mirrorl
 
 ## Architecture
 
-The solution consists of 3 projects:
+The solution consists of 4 projects:
 
 - **Canon.API**: ASP.NET Core Web API (main entry point)
 - **Canon.Core**: Core library wrapping Canon EDSDK functionality
 - **Canon.Core.Tests**: xUnit unit tests of Canon.Core (no camera needed, run on Linux too)
+- **Canon.API.Tests**: xUnit unit tests of the pure parts of Canon.API, compiled from linked sources (Canon.API needs the Windows Desktop runtime)
 
 ### Key Components
 
@@ -47,7 +48,7 @@ dotnet run --project Canon.API
 
 ### Run Unit Tests
 ```bash
-dotnet test Canon.Core.Tests
+dotnet test CanonSDK.sln
 ```
 
 ### Docker (Windows containers)
@@ -88,7 +89,9 @@ Errors are problem details: 400 invalid value, 409 capture refused or setting lo
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
 - All projects target .NET 10 (`net10.0-windows`) with Windows-specific dependencies
-- Uses structured logging with Serilog (logs to console and `logs/canon-api.log`)
+- Uses structured logging with Serilog (logs to console and `logs/canon-api.log` next to the executable; levels from `Logging:LogLevel`)
+- Content root is the executable folder: settings files are read next to the executable whatever the working directory
+- Operator settings go in `appsettings.Local.json`, never shipped: automatic updates overwrite `appsettings.json`
 - Target deployment: photo booth with a Canon EOS R100, dummy battery, no memory card (pictures are saved to the PC only)
 - `docs/openapi.json` must be regenerated when endpoints change
 
@@ -98,7 +101,7 @@ The application includes AutoUpdater.NET with these configurations:
 - Automatic version checking on startup
 - No admin privileges required (`RunUpdateAsAdmin = false`)
 - Custom download path to avoid temp folder permission issues
-- Graceful web server shutdown during updates
+- The update check runs synchronously before the web server starts: nothing to stop when the updater exits the application
 - Updates sourced from GitHub releases via `docs/autoupdate.xml`
 
 ## Release Process
@@ -125,5 +128,6 @@ The project uses GitHub Actions for automated releases (record every change in t
 
 ## Testing
 
-- **Canon.Core.Tests**: xUnit tests of the logic that does not need a camera (value tables, timeouts, file types, CanonThread, LiveViewBroadcaster)
+- **Canon.Core.Tests**: xUnit tests of the logic that does not need a camera (value tables, settings rules, timeouts, file types, CanonThread, LiveViewBroadcaster, EDSDK structure layouts)
+- **Canon.API.Tests**: xUnit tests of the error mapping (CameraExceptionHandler), the request models and the log levels
 - End-to-end testing requires a physical Canon camera connected via USB (not possible in Windows containers)

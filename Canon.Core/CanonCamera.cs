@@ -618,21 +618,23 @@ public sealed class CanonCamera : IDisposable
     }
 
     /// <summary>
-    /// Reads the shooting mode and the ISO, aperture, shutter speed and white balance settings in one call.
+    /// Reads the shooting mode and the ISO, aperture, shutter speed, exposure compensation and white balance settings in one call.
     /// </summary>
     public Task<CameraSettings> GetSettingsAsync() => RunWithBusyRetryAsync(camera =>
     {
         var mode = ReadMode(camera);
+        var isoAuto = IsIsoAuto(camera);
 
         CameraSettingState Read(CameraProperty property)
         {
             EDSDK.EdsGetPropertyData(camera, (uint)property, 0, out uint value).ThrowIfEdSdkError($"Could not get {property}");
             var settable = GetSettableValues(camera, property);
             var supported = (settable ?? []).Select(v => ((uint)property).DescribeValue(v)).ToList();
-            return new CameraSettingState(((uint)property).DescribeValue(value), supported, CameraSettingRules.IsSettable(property, mode.AEModeCode, settable));
+            return new CameraSettingState(((uint)property).DescribeValue(value), supported, CameraSettingRules.IsSettable(property, mode.AEModeCode, settable, isoAuto));
         }
 
-        return new CameraSettings(mode, Read(CameraProperty.ISOSpeed), Read(CameraProperty.Aperture), Read(CameraProperty.ShutterSpeed), Read(CameraProperty.WhiteBalance));
+        return new CameraSettings(mode, Read(CameraProperty.ISOSpeed), Read(CameraProperty.Aperture), Read(CameraProperty.ShutterSpeed),
+            Read(CameraProperty.ExposureCompensation), Read(CameraProperty.WhiteBalance));
     });
 
     /// <summary>
@@ -658,12 +660,13 @@ public sealed class CanonCamera : IDisposable
             var values = await RunWithBusyRetryAsync(camera =>
             {
                 var mode = ReadMode(camera);
+                var isoAuto = IsIsoAutoAfter(camera, settings);
                 var errors = new List<SettingError>();
                 var valid = new List<(CameraProperty Property, uint Value)>();
 
                 foreach (var property in ordered)
                 {
-                    var error = CameraSettingRules.Validate(property, settings[property], mode.AEModeCode, GetSettableValues(camera, property), out var value);
+                    var error = CameraSettingRules.Validate(property, settings[property], mode.AEModeCode, GetSettableValues(camera, property), out var value, isoAuto);
                     if (error != null)
                         errors.Add(error);
                     else
@@ -699,6 +702,17 @@ public sealed class CanonCamera : IDisposable
             _shutterLock.Release();
         }
     }
+
+    /// <summary>
+    /// Whether ISO is Auto once <paramref name="settings"/> are applied: the requested ISO when readable, the current one otherwise.
+    /// </summary>
+    private static bool IsIsoAutoAfter(nint camera, IReadOnlyDictionary<CameraProperty, string> settings) =>
+        settings.TryGetValue(CameraProperty.ISOSpeed, out var requested) && ((uint)CameraProperty.ISOSpeed).TryParseValue(requested, out var requestedIso)
+            ? requestedIso == CameraSettingRules.IsoAuto
+            : IsIsoAuto(camera);
+
+    private static bool IsIsoAuto(nint camera) =>
+        EDSDK.EdsGetPropertyData(camera, (uint)CameraProperty.ISOSpeed, 0, out uint iso) == EDSDK.EDS_ERR_OK && iso == CameraSettingRules.IsoAuto;
 
     /// <summary>
     /// Gets the shooting mode of the camera (mode dial position and still/movie mode).
@@ -834,6 +848,7 @@ public sealed class CanonCamera : IDisposable
             var pending = new PendingCapture(acceptedTypes);
             _pendingCapture = pending;
             _capturing = true;
+            var pressed = false;
 
             try
             {
@@ -849,6 +864,7 @@ public sealed class CanonCamera : IDisposable
                     await RunWithBusyRetryAsync(camera =>
                         EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button)
                             .ThrowIfEdSdkError("Could not press the shutter button"), cancellationToken);
+                    pressed = true;
                 }
                 finally
                 {
@@ -863,6 +879,12 @@ public sealed class CanonCamera : IDisposable
                 throw new TimeoutException(
                     $"The camera did not deliver a picture within {timeout.TotalSeconds:0.#} s. " +
                     $"Check the focus and that the image quality set on the camera produces one of these file types: {string.Join(", ", acceptedTypes)}.");
+            }
+            catch (OperationCanceledException) when (pressed)
+            {
+                // The shot was taken: its file may still arrive and must not answer the next capture.
+                _staleTransfers = true;
+                throw;
             }
             finally
             {
@@ -1007,8 +1029,21 @@ public sealed class CanonCamera : IDisposable
     /// <summary>
     /// Sets the "flash firing" camera setting (Fire or Off).
     /// With <see cref="CanonCameraOptions.ForceFlashFiring"/>, it is set back to Fire before the next capture.
+    /// Waits for a capture or an autofocus in progress to finish.
     /// </summary>
-    public Task SetFlashFiringAsync(bool firing) => RunWithBusyRetryAsync(camera => SetFlashFiringCore(camera, firing));
+    public async Task SetFlashFiringAsync(bool firing, CancellationToken cancellationToken = default)
+    {
+        await _shutterLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await RunWithBusyRetryAsync(camera => SetFlashFiringCore(camera, firing), cancellationToken);
+        }
+        finally
+        {
+            _shutterLock.Release();
+        }
+    }
 
     #endregion
 

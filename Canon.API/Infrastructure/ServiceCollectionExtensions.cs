@@ -22,6 +22,12 @@ public static class ServiceCollectionExtensions
                                             "503 camera not connected or busy, 504 capture timeout.";
                 return Task.CompletedTask;
             });
+            options.AddOperationTransformer((operation, context, _) =>
+            {
+                if (context.Description.ActionDescriptor.EndpointMetadata.OfType<NeverUnavailableAttribute>().Any())
+                    operation.Responses?.Remove(StatusCodes.Status503ServiceUnavailable.ToString());
+                return Task.CompletedTask;
+            });
         });
         services.AddProblemDetails();
         services.AddExceptionHandler<CameraExceptionHandler>();
