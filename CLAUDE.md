@@ -83,7 +83,7 @@ Errors are problem details: 400 invalid value, 409 capture refused, 503 not conn
 
 ## Important Notes
 
-- Camera must be connected via USB before starting the application
+- The camera can be connected via USB before or after the application starts (automatic connection and reconnection)
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
 - All projects target .NET 9 with Windows-specific dependencies

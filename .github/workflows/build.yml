@@ -19,6 +19,19 @@ jobs:
         ref: main
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
+
+    # The release is built from main (the workflow commits the version and AutoUpdater XML to it).
+    # Refuse to release if main is not the tagged commit, so the package always matches the tag.
+    - name: Check that the tag points to main
+      run: |
+        $mainSha = git rev-parse HEAD
+        $tagSha = "${{ github.sha }}"
+        if ($mainSha -ne $tagSha) {
+          Write-Error "Tag ${{ github.ref_name }} points to $tagSha but main is at $mainSha. Tag the latest commit of main."
+          exit 1
+        }
+        echo "Tag ${{ github.ref_name }} matches main ($mainSha)"
+      shell: powershell
       
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
