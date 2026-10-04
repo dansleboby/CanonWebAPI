@@ -24,6 +24,10 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
   `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments` (Windows or Linux); the former
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
 
+### Fixed
+- Linux: the application crashed when the camera was turned off or unplugged. The session of a camera that is gone is
+  no longer closed before the camera is released (the release closes it), as in the Canon samples.
+
 ## [1.4.0.0] - 2026-09-30
 
 ### Added

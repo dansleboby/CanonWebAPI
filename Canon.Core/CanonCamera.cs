@@ -223,7 +223,11 @@ public sealed class CanonCamera : IDisposable
     /// <summary>
     /// Closes the session and releases the camera. Runs on the Canon thread.
     /// </summary>
-    private void DisconnectCore(string reason, nint expectedCamera = 0)
+    /// <param name="closeSession">
+    /// False when the camera is gone: releasing it closes the session, and closing it before makes the Linux EDSDK
+    /// terminate the USB connection twice (crash in EdsRelease). The Canon samples only release it too.
+    /// </param>
+    private void DisconnectCore(string reason, nint expectedCamera = 0, bool closeSession = true)
     {
         var camera = _cameraRef;
 
@@ -248,7 +252,8 @@ public sealed class CanonCamera : IDisposable
         }
         _flashFiring = null;
 
-        EDSDK.EdsCloseSession(camera);
+        if (closeSession)
+            EDSDK.EdsCloseSession(camera);
         EDSDK.EdsRelease(camera);
 
         _logger?.LogWarning("Camera disconnected: {Reason}", reason);
@@ -313,7 +318,7 @@ public sealed class CanonCamera : IDisposable
         catch (EdsException e) when (e.IsDisconnected && e is not CameraNotConnectedException && usedCamera != nint.Zero)
         {
             // The session is no longer usable: drop it so the next call reconnects.
-            await _thread.InvokeAsync(() => DisconnectCore(e.Message, usedCamera));
+            await _thread.InvokeAsync(() => DisconnectCore(e.Message, usedCamera, closeSession: false));
             throw;
         }
     }
@@ -411,7 +416,7 @@ public sealed class CanonCamera : IDisposable
             case EDSDK.StateEvent_Shutdown:
                 // SDK calls are deferred until the callback has returned.
                 _connected = false;
-                _thread.Post(() => DisconnectCore("camera turned off or unplugged"));
+                _thread.Post(() => DisconnectCore("camera turned off or unplugged", closeSession: false));
                 break;
 
             case EDSDK.StateEvent_WillSoonShutDown:
