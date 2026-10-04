@@ -7,7 +7,7 @@ using Canon.Core;
 namespace Canon.Core.Tests;
 
 /// <summary>
-/// Layouts checked against EDSDKTypes.h (13.20.21), x64.
+/// P/Invoke contract: library name, and layouts checked against EDSDKTypes.h (13.20.21), x64.
 /// </summary>
 public class EdsdkInteropTests
 {

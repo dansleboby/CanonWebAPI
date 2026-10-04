@@ -233,7 +233,7 @@ Replace the whole `Canon.API/Canon.API.csproj` with:
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
-    <!-- Build-time generation of docs/openapi.json, opt-in: dotnet build -f net10.0 -p:OpenApiGenerateDocumentsOnBuild=true -->
+    <!-- Build-time generation of docs/openapi.json, opt-in: dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments -->
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -397,8 +397,10 @@ Expected: the console log contains `Automatic updates are not available on this 
 
 - [ ] **Step 11: Regenerate the OpenAPI document with the Linux target**
 
-Run: `dotnet build Canon.API -f net10.0 -p:OpenApiGenerateDocumentsOnBuild=true && git diff --stat docs/openapi.json`
+Run: `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments && git diff --stat docs/openapi.json`
 Expected: no difference (no endpoint changed). If the file differs, stop and report the difference.
+
+Erratum: the `-p:OpenApiGenerateDocumentsOnBuild=true` form is a no-op in a multi-targeted project; the generated document also differs cosmetically from the committed one (schema order, `default: null`, final newline), so it is not regenerated in this plan.
 
 - [ ] **Step 12: Documentation**
 
@@ -426,7 +428,7 @@ dotnet run --project Canon.API -f net10.0 --launch-profile http
 *   Logs: console and `Canon.API/bin/Debug/net10.0/logs/`.
 ````
 
-- "OpenAPI Document": replace "To regenerate `docs/openapi.json` at build time (on Windows):" and its command with "To regenerate `docs/openapi.json` at build time (Windows or Linux):" and `dotnet build Canon.API -f net10.0 -p:OpenApiGenerateDocumentsOnBuild=true`.
+- "OpenAPI Document": replace "To regenerate `docs/openapi.json` at build time (on Windows):" and its command with "To regenerate `docs/openapi.json` at build time (Windows or Linux):" and `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments`.
 - System Requirements, OS line: `*   **OS**: Windows 10/11 (x64); Linux x64 from the sources (see [Running on Linux](#running-on-linux))`.
 
 `CLAUDE.md`:
@@ -813,7 +815,7 @@ If the desktop mounted it: `gio mount -u <location shown by gio mount -l>`.
 - [ ] **Step 3: Run the photo booth sequence**
 
 ```bash
-S=/tmp/claude-1000/-home-gilbert-Documents-Project-CanonWebAPI/055083d5-ab07-4905-b425-34b4a1057fc9/scratchpad
+S=$(mktemp -d)
 dotnet run --project Canon.API -f net10.0 --launch-profile http -- --Logging:LogLevel:Canon.Core=Debug   # background
 curl -s http://localhost:5159/status
 curl -s -N -o /dev/null --max-time 120 http://localhost:5159/videostream &   # the photo booth live view

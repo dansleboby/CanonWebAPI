@@ -28,6 +28,8 @@ public class CameraExceptionHandlerTests
         { NotApplied(new EdsException(EDSDK.EDS_ERR_DEVICE_BUSY, "x")), 503 },
         { NotApplied(new EdsException(EDSDK.EDS_ERR_INVALID_DEVICEPROP_VALUE, "x")), 400 },
         { new InvalidOperationException(), 500 },
+        { new DllNotFoundException("x"), 500 },
+        { new BadImageFormatException("x"), 500 },
     };
 
     private static CameraSettingsException Refused(SettingErrorReason reason) =>

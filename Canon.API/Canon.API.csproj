@@ -12,7 +12,8 @@
     <FileVersion>1.4.0.0</FileVersion>
     <Version>1.4.0.0</Version>
 
-    <!-- OpenAPI document generated at build time only when requested (see README) -->
+    <!-- OpenAPI document generated at build time only when requested (see README). Keep false: the package's outer-build hook
+         would otherwise generate from net10.0-windows before every solution build. -->
     <OpenApiGenerateDocumentsOnBuild>false</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/../docs</OpenApiDocumentsDirectory>
     <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
@@ -43,7 +44,10 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
-    <!-- Build-time generation of docs/openapi.json, opt-in: dotnet build -f net10.0 -t:Build -t:GenerateOpenApiDocuments -->
+    <!-- Build-time generation of docs/openapi.json, opt-in: dotnet build -f net10.0 -t:Build -t:GenerateOpenApiDocuments
+         (the package hook skips the inner builds of a multi-targeted project, so -p:OpenApiGenerateDocumentsOnBuild=true
+         with -f generates nothing; net10.0 keeps the Windows update check out of the generator, which runs the application's
+         entry point) -->
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

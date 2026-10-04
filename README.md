@@ -28,7 +28,7 @@ A web API for remotely controlling Canon DSLR and mirrorless cameras. This proje
 *   Retrieve the last taken picture.
 *   Automatic reconnection when the camera is turned off or unplugged and plugged back (hot plug).
 *   OpenAPI document and Swagger UI.
-*   **Automatic updates** via AutoUpdater.NET integration.
+*   **Automatic updates** via AutoUpdater.NET integration (Windows).
 *   **Version display** in console on startup.
 
 ## Project Structure
@@ -172,8 +172,8 @@ settings that differ from the defaults, e.g.:
 | `LiveView:FrameIntervalMilliseconds` | `30` | Delay between two live view frames. |
 | `LiveView:IdleStopDelayMilliseconds` | `3000` | The camera live view stops this long after the last `/videostream` client left. |
 | `LiveView:ErrorRetryDelayMilliseconds` | `1000` | Delay before retrying after a live view error (e.g. camera disconnected). |
-| `AutoUpdate:Enabled` | `true` | Checks for updates at startup. |
-| `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. |
+| `AutoUpdate:Enabled` | `true` | Checks for updates at startup. Windows only. |
+| `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. Windows only. |
 | `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). `Canon.Core`: `Debug` logs every EDSDK event and each step of a capture (UI lock, flash settings, shutter button, transfer) with its result and duration. |
 
 ## Automatic Updates
@@ -184,6 +184,8 @@ This application includes automatic update functionality powered by AutoUpdater.
 *   **Seamless updates** without requiring admin privileges
 *   Updates are downloaded from GitHub releases automatically
 *   `appsettings.json` is replaced by each update: keep the settings of a photo booth in `appsettings.Local.json`
+
+Linux has no automatic update yet (the `net10.0` target does not include AutoUpdater.NET).
 
 ## Development & Building
 
@@ -282,6 +284,10 @@ The document is always available at `/openapi/v1.json`. To regenerate `docs/open
 dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments
 ```
 
+The build-time hook of the `Microsoft.Extensions.ApiDescription.Server` package skips the inner builds of a multi-targeted
+project, so `-p:OpenApiGenerateDocumentsOnBuild=true` with `-f` generates nothing; the `net10.0` target keeps the Windows
+update check out of the generator, which runs the application's entry point.
+
 ## Compatibility
 
 ### Tested Camera Models
@@ -294,3 +300,7 @@ dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 
 > **Note**: While this software has been tested with the above camera models, it should work with other Canon cameras that support the EDSDK. However, functionality may vary depending on the specific camera model and its supported features.
+
+## License notices
+
+The Canon EDSDK libraries in `EDSDK/` are based in part on the work of the Independent JPEG Group.

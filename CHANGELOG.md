@@ -10,12 +10,19 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 ### Added
 - Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK
   (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update and no release package on Linux yet.
-- Debug logs (`Logging:LogLevel:Canon.Core` = `Debug`): every EDSDK event, and each step of a capture (UI lock, flash settings, shutter button, transfer) with its result and duration.
+- Debug logs (`Logging:LogLevel:Canon.Core` = `Debug`): every EDSDK event, and each step of a capture (UI lock, flash
+  settings, shutter button, transfer) with its result and duration.
 
 ### Changed
 - `Canon.API` has two target frameworks: `dotnet run` and `dotnet publish` need `-f net10.0-windows` (Windows) or
   `-f net10.0` (Linux). `Canon.Core` and the unit tests target `net10.0`.
 - A failed UI unlock after setting the flash is logged as a warning; it was ignored.
+- The problem title returned when the Canon EDSDK cannot be loaded now names both platforms: "Canon EDSDK could not be
+  loaded (EDSDK.dll or libEDSDK.so missing, wrong architecture, or libusb-1.0 missing on Linux)" (was "...(EDSDK.dll
+  missing or wrong architecture)"). Client-visible text.
+- Regenerating `docs/openapi.json` at build time now uses
+  `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments` (Windows or Linux); the former
+  `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
 
 ## [1.4.0.0] - 2026-09-30
 

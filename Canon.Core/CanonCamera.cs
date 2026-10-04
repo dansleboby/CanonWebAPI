@@ -370,7 +370,7 @@ public sealed class CanonCamera : IDisposable
 
     private uint OnCameraPropertyChanged(uint inEvent, uint inPropertyId, uint inParam, nint inContext)
     {
-        _logger?.LogDebug("SDK event {Event}: property 0x{Property:X}, parameter 0x{Parameter:X}", EdsdkHelper.DescribeEvent(inEvent), inPropertyId, inParam);
+        _logger?.LogDebug("SDK event {Event}: property 0x{Property:X}, parameter 0x{Parameter:X}, thread {Thread}", EdsdkHelper.DescribeEvent(inEvent), inPropertyId, inParam, Environment.CurrentManagedThreadId);
 
         if (inEvent != EDSDK.PropertyEvent_PropertyChanged || PropertyChanged == null)
             return EDSDK.EDS_ERR_OK;
@@ -404,7 +404,7 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private uint OnCameraStateChanged(uint inEvent, uint inParameter, nint inContext)
     {
-        _logger?.LogDebug("SDK event {Event}: parameter 0x{Parameter:X}", EdsdkHelper.DescribeEvent(inEvent), inParameter);
+        _logger?.LogDebug("SDK event {Event}: parameter 0x{Parameter:X}, thread {Thread}", EdsdkHelper.DescribeEvent(inEvent), inParameter, Environment.CurrentManagedThreadId);
 
         switch (inEvent)
         {
@@ -458,7 +458,7 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
     {
-        _logger?.LogDebug("SDK event {Event}", EdsdkHelper.DescribeEvent(inEvent));
+        _logger?.LogDebug("SDK event {Event}, thread {Thread}", EdsdkHelper.DescribeEvent(inEvent), Environment.CurrentManagedThreadId);
 
         try
         {

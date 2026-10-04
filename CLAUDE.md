@@ -13,7 +13,7 @@ The solution consists of 4 projects:
 - **Canon.API**: ASP.NET Core Web API (main entry point); targets `net10.0-windows` (Windows release, AutoUpdater.NET) and `net10.0` (Linux, no automatic update)
 - **Canon.Core**: Core library wrapping Canon EDSDK functionality
 - **Canon.Core.Tests**: xUnit unit tests of Canon.Core (no camera needed, run on Linux too)
-- **Canon.API.Tests**: xUnit unit tests of the pure parts of Canon.API, compiled from linked sources (Canon.API needs the Windows Desktop runtime)
+- **Canon.API.Tests**: xUnit unit tests of the pure parts of Canon.API, compiled from the Canon.API sources so they do not depend on the API project and its packages
 
 ### Key Components
 
@@ -97,6 +97,8 @@ Errors are problem details: 400 invalid value, 409 capture refused or setting lo
 - `docs/openapi.json` must be regenerated when endpoints change
 
 ## AutoUpdater Integration
+
+Applies to the `net10.0-windows` target only: the `net10.0` target (Linux) has no automatic update.
 
 The application includes AutoUpdater.NET with these configurations:
 - Automatic version checking on startup
