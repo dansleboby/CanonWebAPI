@@ -57,7 +57,7 @@ update on Linux, macOS. Fixing the capture failure itself is a separate change, 
   the output and publish folders, excluded from the single file, as today.
 - Commands: `dotnet run --project Canon.API -f net10.0` on Linux, `-f net10.0-windows` on Windows. The publish
   commands (`.github/workflows/build.yml`, `Dockerfile`, `build.bat`) add `-f net10.0-windows`. The opt-in OpenAPI
-  generation command adds `-f net10.0-windows`, so the document is written once.
+  generation command uses `-f net10.0`, which runs on Windows and Linux, so the document is written once.
 - Running on Linux:
   - The user needs read/write access to the camera USB device (desktop sessions get it through `uaccess`).
   - Nothing else may hold the camera: no GNOME (gvfs) gphoto2 mount, no VMware USB passthrough.
@@ -71,10 +71,10 @@ update on Linux, macOS. Fixing the capture failure itself is a separate change, 
 - Logged:
   - every event received from the SDK: state events (name and parameter), object events (name), property events
     (property id and parameter);
-  - each step of a capture, with its EDSDK result code and the time elapsed since the capture started: UI lock,
+  - each step of a capture, with its EDSDK result code and its duration: UI lock,
     flash target, flash firing, UI unlock, shutter press (each attempt), shutter release (each attempt), transfer
     request, download, then completion, failure or timeout.
-- The UI unlock result was ignored until now: it is logged and stays non-fatal.
+- The UI unlock result was ignored until now: it is logged, as a warning when it fails, and stays non-fatal.
 - Event names come from a pure helper in `EdsdkHelper`, so they can be unit tested.
 - Logging only: no behavior change.
 
