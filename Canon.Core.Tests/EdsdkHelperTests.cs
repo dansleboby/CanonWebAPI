@@ -137,4 +137,23 @@ public class EdsdkHelperTests
     {
         Assert.Equal(message, EdsdkHelper.GetCaptureErrorMessage(code));
     }
+
+    [Theory]
+    [InlineData(EDSDK.StateEvent_Shutdown, "StateEvent_Shutdown")]
+    [InlineData(EDSDK.StateEvent_CaptureError, "StateEvent_CaptureError")]
+    [InlineData(EDSDK.ObjectEvent_DirItemRequestTransfer, "ObjectEvent_DirItemRequestTransfer")]
+    [InlineData(EDSDK.PropertyEvent_PropertyChanged, "PropertyEvent_PropertyChanged")]
+    [InlineData(0xABCDu, "0xABCD")]
+    public void Events_are_named_after_their_constant(uint eventId, string name)
+    {
+        Assert.Equal(name, EdsdkHelper.DescribeEvent(eventId));
+    }
+
+    [Fact]
+    public void Results_are_described_with_their_code()
+    {
+        Assert.Equal("OK", EdsdkHelper.DescribeResult(EDSDK.EDS_ERR_OK));
+        Assert.Equal("Device is busy (0x2019)", EdsdkHelper.DescribeResult(EDSDK.EDS_ERR_PTP_DEVICE_BUSY));
+        Assert.Equal("0x12345678", EdsdkHelper.DescribeResult(0x12345678));
+    }
 }

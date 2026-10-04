@@ -1,4 +1,6 @@
-﻿namespace Canon.Core;
+﻿using System.Reflection;
+
+namespace Canon.Core;
 
 internal static class EdsdkHelper
 {
@@ -170,6 +172,28 @@ internal static class EdsdkHelper
 
     public static string GetErrorMessage(uint errorCode) =>
         ErrorMessages.TryGetValue(errorCode, out var message) ? message : $"EDSDK error 0x{errorCode:X8}";
+
+    /// <summary>
+    /// "OK", the error message followed by its code, or the code alone when unknown.
+    /// </summary>
+    public static string DescribeResult(uint errorCode) =>
+        errorCode == EDSDK.EDS_ERR_OK ? "OK"
+        : ErrorMessages.TryGetValue(errorCode, out var message) ? $"{message} ({FormatRawValue(errorCode)})"
+        : FormatRawValue(errorCode);
+
+    // Property, object and state event constants of EDSDK, by value ("*_All" are subscription masks, not events).
+    private static readonly Dictionary<uint, string> EventNames = typeof(EDSDK)
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Where(field => field.IsLiteral && field.FieldType == typeof(uint) && !field.Name.EndsWith("_All")
+            && (field.Name.StartsWith("PropertyEvent_") || field.Name.StartsWith("ObjectEvent_") || field.Name.StartsWith("StateEvent_")))
+        .GroupBy(field => (uint)field.GetRawConstantValue()!)
+        .ToDictionary(group => group.Key, group => group.First().Name);
+
+    /// <summary>
+    /// Name of an EDSDK event (e.g. "StateEvent_Shutdown"), or its code when unknown.
+    /// </summary>
+    public static string DescribeEvent(uint eventId) =>
+        EventNames.TryGetValue(eventId, out var name) ? name : FormatRawValue(eventId);
 
     /// <summary>
     /// Values of kEdsPropID_Av (EDSDK API reference 5.2.25).
