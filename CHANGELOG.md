@@ -25,8 +25,9 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
 
 ### Fixed
-- Linux: the application crashed when the camera was turned off or unplugged. The session of a camera that is gone is
-  no longer closed before the camera is released (the release closes it), as in the Canon samples.
+- Linux: the application crashed when the camera was turned off or unplugged. The SDK closes the session itself then,
+  and closing it again (explicitly or by releasing the camera) crashed it. The session of a camera that is gone is no
+  longer closed, as in the Canon samples, and on Linux the camera object is left to the SDK.
 - Linux: a camera turned back on or plugged back in was not reconnected, because the SDK lists it a few seconds after
   reporting it. The connection is now retried for about 10 s.
 
