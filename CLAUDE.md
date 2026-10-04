@@ -80,7 +80,7 @@ The Canon.API project exposes these REST endpoints (OpenAPI at `/openapi/v1.json
 - GET `/latestpicture` - Retrieve last captured image
 - POST `/autofocus` - Trigger autofocus
 - GET `/cameraname`, `/mode`, `/temperature`, `/status` - Camera information
-- GET/POST `/flash` - "Flash firing" setting (forced to Fire before each capture by default)
+- GET/POST `/flash` - "Flash firing" setting (forced to Fire by default, outside the live view)
 
 Errors are problem details: 400 invalid value, 409 capture refused or setting locked by the shooting mode, 503 not connected/busy, 504 capture timeout.
 
@@ -125,7 +125,7 @@ The project uses GitHub Actions for automated releases (record every change in t
 - Downloads go to memory streams; the progress callback is registered before `EdsDownload`
 - Live view is started with `Evf_OutputDevice` and stopped when no client uses it
 - "Device busy" answers are retried after ~500 ms, as in the Canon samples; only the shutter press is retried, the release is always sent
-- Flash (`EdsCreateFlashSettingRef`, `Flash_Target`, `Flash_Firing`): the UI must be locked while setting it; the SDK only reports values set remotely, so the setting is forced before each capture (studio flash on the shoe in the photo booth)
+- Flash (`EdsCreateFlashSettingRef`, `Flash_Target`, `Flash_Firing`): the UI must be locked while setting it; the SDK only reports values set remotely, so the setting is forced when the camera connects, before the live view starts and before a capture without live view (studio flash on the shoe in the photo booth). Never write it while the live view runs: the EOS R100 freezes (shutter busy until it is turned off and on); POST /flash pauses the live view
 - Settings: `CameraSettingRules` (pure, tested) decides what is settable per AE mode; EdsGetPropertyDesc gives the accepted values (its `form`/`access` fields are reserved, always 0); an empty list means not settable now (as in the Canon samples). Set only values from that list (API reference 3.1.20)
 - Memory management critical due to unmanaged EDSDK resources: release every ref (`EdsRelease`)
 

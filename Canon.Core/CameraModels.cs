@@ -25,7 +25,10 @@ public sealed record CameraMode(uint AEModeCode, string AEMode, bool IsCreativeZ
 /// True: Fire, false: Off, null: unknown. The SDK only reports values set remotely:
 /// a change made in the camera menu is not visible until the value is set again by the API.
 /// </param>
-/// <param name="ForcedBeforeCapture">True when the setting is set to Fire before every capture (Canon:ForceFlashFiring).</param>
+/// <param name="ForcedBeforeCapture">
+/// True when the setting is forced to Fire (Canon:ForceFlashFiring): when the camera connects, before the live view starts
+/// and before a capture taken without live view.
+/// </param>
 /// <param name="LastError">Why the last attempt to set the flash failed, if it did.</param>
 public sealed record FlashStatus(bool IsSupported, bool? Firing, bool ForcedBeforeCapture, string? LastError)
 {

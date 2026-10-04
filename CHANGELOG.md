@@ -25,6 +25,11 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
 
 ### Fixed
+- The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
+  (503 "Camera busy"), no picture was returned, and the camera did not respond until it was turned off and on. Writing
+  the flash setting during the live view freezes the camera (EOS R100), and `Canon:ForceFlashFiring` wrote it before
+  every capture. It is now written when the camera connects, before the live view starts and before a capture taken
+  without live view; `POST /flash` pauses the live view while it writes it.
 - Linux: the application crashed when the camera was turned off or unplugged. The SDK closes the session itself then,
   and closing it again (explicitly or by releasing the camera) crashed it. The session of a camera that is gone is no
   longer closed, as in the Canon samples, and on Linux the camera object is left to the SDK.

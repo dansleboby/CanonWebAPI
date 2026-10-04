@@ -166,7 +166,7 @@ settings that differ from the defaults, e.g.:
 | `Canon:LiveViewSmallImage` | `false` | Uses the smaller live view image (less bandwidth, lower resolution; not supported by every camera). |
 | `Canon:KeepCameraScreenOn` | `false` | Keeps the camera screen on during the live view. When `false`, the live view is sent to the PC only, which turns the camera screen off and locks its buttons. |
 | `Canon:PreventAutoPowerOff` | `true` | Extends the camera auto power off timer when the camera announces it will turn off. |
-| `Canon:ForceFlashFiring` | `true` | Sets "flash firing" to Fire when the camera connects and before every capture, so a flash on the accessory shoe always fires even if the setting was changed on the camera. Requires P, Tv, Av or M. |
+| `Canon:ForceFlashFiring` | `true` | Sets "flash firing" to Fire when the camera connects, before the live view starts and before a capture taken without live view, so a flash on the accessory shoe always fires even if the setting was changed on the camera. Never while the live view runs: writing the flash setting then freezes the camera. Requires P, Tv, Av or M. |
 | `Canon:FlashTarget` | `Unspecified` | Target of the flash settings: `Unspecified` (e.g. studio flash triggered by the shoe center contact) or `External` (flash communicating with the camera). |
 | `Canon:BusyRetryCount` / `BusyRetryDelayMilliseconds` | `3` / `500` | Retries when the camera answers "device busy". |
 | `LiveView:FrameIntervalMilliseconds` | `30` | Delay between two live view frames. |

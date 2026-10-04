@@ -44,6 +44,8 @@ public sealed class CanonCamera : IDisposable
     private volatile bool _liveViewActive;
     private volatile bool _liveViewRequested;
     private volatile bool _capturing;
+    // Set while the flash setting pauses the live view: frames are skipped so the live view is not restarted meanwhile.
+    private volatile bool _liveViewPaused;
     private volatile PendingCapture? _pendingCapture;
     private volatile CapturedImage? _latestImage;
 
@@ -896,9 +898,16 @@ public sealed class CanonCamera : IDisposable
         {
             await WaitForPendingTransfersAsync(cancellationToken);
 
-            // The setting may have been changed on the camera, and the SDK does not report it: set it again.
+            // The setting may have been changed on the camera, and the SDK does not report it: set it again, unless the
+            // live view runs (setting the flash then freezes the camera; it was set when the live view started).
             if (_options.ForceFlashFiring)
-                await RunAsync(camera => TrySetFlashFiring(camera, true));
+            {
+                await RunAsync(camera =>
+                {
+                    if (!_liveViewActive)
+                        TrySetFlashFiring(camera, true);
+                });
+            }
 
             var timeout = await GetCaptureTimeout();
             var pending = new PendingCapture(acceptedTypes);
@@ -1086,7 +1095,8 @@ public sealed class CanonCamera : IDisposable
         var firing = _flashFiring;
 
         // The SDK only returns a value once it has been set remotely (EDSDK API reference 6.32.2).
-        if (firing.HasValue && _flashRef != nint.Zero
+        // Not read while the live view runs: writing it then freezes the camera, so it is not touched at all.
+        if (firing.HasValue && _flashRef != nint.Zero && !_liveViewActive
             && EDSDK.EdsGetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, out uint value) == EDSDK.EDS_ERR_OK)
             firing = value != 0;
 
@@ -1094,21 +1104,50 @@ public sealed class CanonCamera : IDisposable
     });
 
     /// <summary>
-    /// Sets the "flash firing" camera setting (Fire or Off).
-    /// With <see cref="CanonCameraOptions.ForceFlashFiring"/>, it is set back to Fire before the next capture.
+    /// Sets the "flash firing" camera setting (Fire or Off). A running live view is paused meanwhile, because setting
+    /// the flash during the live view freezes the camera.
+    /// With <see cref="CanonCameraOptions.ForceFlashFiring"/>, it is set back to Fire the next time the live view starts
+    /// or before the next capture taken without live view.
     /// Waits for a capture or an autofocus in progress to finish.
     /// </summary>
     public async Task SetFlashFiringAsync(bool firing, CancellationToken cancellationToken = default)
     {
         await _shutterLock.WaitAsync(cancellationToken);
+        _liveViewPaused = true;
+        var resumeLiveView = false;
 
         try
         {
-            await RunWithBusyRetryAsync(camera => SetFlashFiringCore(camera, firing), cancellationToken);
+            await RunWithBusyRetryAsync(camera =>
+            {
+                if (_liveViewActive)
+                {
+                    StopLiveViewCore(camera);
+                    resumeLiveView = true;
+                }
+
+                SetFlashFiringCore(camera, firing);
+            }, cancellationToken);
         }
         finally
         {
-            _shutterLock.Release();
+            try
+            {
+                // Retried alone: the camera answers busy for a moment after the flash setting.
+                if (resumeLiveView)
+                {
+                    await RunWithBusyRetryAsync(camera =>
+                    {
+                        if (!_liveViewActive)
+                            StartLiveViewCore(camera);
+                    });
+                }
+            }
+            finally
+            {
+                _liveViewPaused = false;
+                _shutterLock.Release();
+            }
         }
     }
 
@@ -1119,28 +1158,42 @@ public sealed class CanonCamera : IDisposable
     /// <summary>
     /// Starts streaming the live view to the PC (EDSDK API reference, sample 10).
     /// </summary>
-    public Task StartLiveViewAsync()
+    public async Task StartLiveViewAsync()
     {
         _liveViewRequested = true;
 
-        return RunWithBusyRetryAsync(camera =>
+        // Setting the flash while the live view runs freezes the camera: this is the last chance until it stops.
+        if (_options.ForceFlashFiring)
         {
-            if (_liveViewActive)
-                return;
+            await RunAsync(camera =>
+            {
+                if (!_liveViewActive)
+                    TrySetFlashFiring(camera, true);
+            });
+        }
 
-            // Live view cannot start when it is disabled in the camera settings.
-            if (EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, out uint evfMode) == EDSDK.EDS_ERR_OK && evfMode == 0)
-                EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, sizeof(uint), 1u).ThrowIfEdSdkError("Could not enable live view");
-
-            EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device);
-
-            var pcOutput = _options.LiveViewSmallImage ? EDSDK.EvfOutputDevice_PC_Small : EDSDK.EvfOutputDevice_PC;
-            device = _options.KeepCameraScreenOn ? device | pcOutput : pcOutput;
-
-            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not start live view");
-            _liveViewActive = true;
-            _logger?.LogInformation("Live view started");
+        // Retried alone: the camera answers busy for a moment after the flash setting.
+        await RunWithBusyRetryAsync(camera =>
+        {
+            if (!_liveViewActive)
+                StartLiveViewCore(camera);
         });
+    }
+
+    private void StartLiveViewCore(nint camera)
+    {
+        // Live view cannot start when it is disabled in the camera settings.
+        if (EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, out uint evfMode) == EDSDK.EDS_ERR_OK && evfMode == 0)
+            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_Mode, 0, sizeof(uint), 1u).ThrowIfEdSdkError("Could not enable live view");
+
+        EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device);
+
+        var pcOutput = _options.LiveViewSmallImage ? EDSDK.EvfOutputDevice_PC_Small : EDSDK.EvfOutputDevice_PC;
+        device = _options.KeepCameraScreenOn ? device | pcOutput : pcOutput;
+
+        EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not start live view");
+        _liveViewActive = true;
+        _logger?.LogInformation("Live view started");
     }
 
     /// <summary>
@@ -1180,7 +1233,7 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     public async Task<byte[]?> GetLiveView()
     {
-        if (_capturing)
+        if (_capturing || _liveViewPaused)
             return null;
 
         if (!_liveViewActive)
@@ -1188,7 +1241,7 @@ public sealed class CanonCamera : IDisposable
 
         return await RunAsync(camera =>
         {
-            if (_capturing)
+            if (_capturing || _liveViewPaused)
                 return null;
 
             var evfImage = nint.Zero;

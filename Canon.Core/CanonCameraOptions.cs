@@ -49,8 +49,9 @@ public sealed class CanonCameraOptions
     public bool PreventAutoPowerOff { get; set; } = true;
 
     /// <summary>
-    /// Sets the "flash firing" camera setting to Fire when the camera connects and before every capture,
-    /// so a flash on the accessory shoe always fires even if the setting was changed on the camera.
+    /// Sets the "flash firing" camera setting to Fire when the camera connects, before the live view starts and before a
+    /// capture taken without live view, so a flash on the accessory shoe always fires even if the setting was changed on
+    /// the camera. Never while the live view runs: writing the flash setting then freezes the camera (EOS R100).
     /// The camera must be in a creative zone mode (P, Tv, Av, M).
     /// </summary>
     public bool ForceFlashFiring { get; set; } = true;
