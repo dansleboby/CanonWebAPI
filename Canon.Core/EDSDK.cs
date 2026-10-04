@@ -8,7 +8,10 @@ namespace Canon.Core;
 
 internal class EDSDK
 {
-    [DllImport("EDSDK.dll")]
+    // Resolved to EDSDK.dll on Windows and libEDSDK.so on Linux.
+    private const string Library = "EDSDK";
+
+    [DllImport(Library)]
     public static extern uint EdsGetEvent();
 
     #region Data Types
@@ -1058,7 +1061,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsInitializeSDK();
 
     /*-----------------------------------------------------------------------------
@@ -1076,7 +1079,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsTerminateSDK();
 
 
@@ -1096,7 +1099,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsRetain(IntPtr inRef);
 
     /*-----------------------------------------------------------------------------
@@ -1112,7 +1115,7 @@ internal class EDSDK
     //      Out:    None
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsRelease(IntPtr inRef);
 
 
@@ -1133,7 +1136,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetChildCount(IntPtr inRef, out int outCount);
 
     /*-----------------------------------------------------------------------------
@@ -1151,7 +1154,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetChildAtIndex(IntPtr inRef, int inIndex, out IntPtr outRef);
 
     /*-----------------------------------------------------------------------------
@@ -1167,7 +1170,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetParent(IntPtr inRef, out IntPtr outParentRef);
 
 
@@ -1195,7 +1198,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPropertySize(IntPtr inRef, uint inPropertyID, int inParam,
         out EdsDataType outDataType, out int outSize);
 
@@ -1218,7 +1221,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPropertyData(IntPtr inRef, uint inPropertyID, int inParam,
         int inPropertySize, IntPtr outPropertyData);
 
@@ -1416,7 +1419,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetPropertyData(IntPtr inRef, uint inPropertyID,
         int inParam, int inPropertySize, [MarshalAs(UnmanagedType.AsAny)] [In] object inPropertyData);
 
@@ -1436,7 +1439,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPropertyDesc(IntPtr inRef, uint inPropertyID,
         out EdsPropertyDesc outPropertyDesc);
 
@@ -1456,7 +1459,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetCameraList(out IntPtr outCameraListRef);
 
     /*--------------------------------------------
@@ -1479,7 +1482,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetDeviceInfo(IntPtr inCameraRef, out EdsDeviceInfo outDeviceInfo);
 
     /*-----------------------------------------------------------------------------
@@ -1496,7 +1499,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsOpenSession(IntPtr inCameraRef);
 
     /*-----------------------------------------------------------------------------
@@ -1512,7 +1515,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCloseSession(IntPtr inCameraRef);
 
     /*-----------------------------------------------------------------------------
@@ -1531,7 +1534,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSendCommand(IntPtr inCameraRef, uint inCommand, int inParam);
 
     /*-----------------------------------------------------------------------------
@@ -1550,7 +1553,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSendStatusCommand(IntPtr inCameraRef, uint inCameraState, int inParam);
 
     /*-----------------------------------------------------------------------------
@@ -1578,7 +1581,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetCapacity(IntPtr inCameraRef, EdsCapacity inCapacity);
 
 
@@ -1598,7 +1601,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetVolumeInfo(IntPtr inCameraRef, out EdsVolumeInfo outVolumeInfo);
 
     /*-----------------------------------------------------------------------------
@@ -1613,7 +1616,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsFormatVolume(IntPtr inVolumeRef);
 
 
@@ -1634,7 +1637,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetDirectoryItemInfo(IntPtr inDirItemRef,
         out EdsDirectoryItemInfo outDirItemInfo);
 
@@ -1655,7 +1658,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDeleteDirectoryItem(IntPtr inDirItemRef);
 
     /*-----------------------------------------------------------------------------
@@ -1678,7 +1681,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDownload(IntPtr inDirItemRef, ulong inReadSize, IntPtr outStream);
 
     /*-----------------------------------------------------------------------------
@@ -1696,7 +1699,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDownloadCancel(IntPtr inDirItemRef);
 
     /*-----------------------------------------------------------------------------
@@ -1716,7 +1719,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDownloadComplete(IntPtr inDirItemRef);
 
     /*-----------------------------------------------------------------------------
@@ -1736,7 +1739,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDownloadThumbnail(IntPtr inDirItemRef, IntPtr outStream);
 
     /*-----------------------------------------------------------------------------
@@ -1756,7 +1759,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetAttribute(IntPtr inDirItemRef, out EdsFileAttribute outFileAttribute);
 
     /*-----------------------------------------------------------------------------
@@ -1775,7 +1778,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetAttribute(IntPtr inDirItemRef, EdsFileAttribute inFileAttribute);
 
     /*--------------------------------------------
@@ -1802,7 +1805,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateFileStream(string inFileName, EdsFileCreateDisposition inCreateDisposition,
         EdsAccess inDesiredAccess, out IntPtr outStream);
 
@@ -1821,7 +1824,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateMemoryStream(ulong inBufferSize, out IntPtr outStream);
 
     /*-----------------------------------------------------------------------------
@@ -1842,7 +1845,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateFileStreamEx(
         [MarshalAs(UnmanagedType.LPWStr)] string inFileName,
         EdsFileCreateDisposition inCreateDisposition,
@@ -1865,7 +1868,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateMemoryStreamFromPointer(IntPtr inUserBuffer,
         ulong inBufferSize, out IntPtr outStream);
 
@@ -1890,7 +1893,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPointer(IntPtr inStreamRef, out IntPtr outPointer);
 
     /*-----------------------------------------------------------------------------
@@ -1911,7 +1914,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsRead(IntPtr inStreamRef, ulong inReadSize, IntPtr outBuffer,
         out ulong outReadSize);
 
@@ -1932,7 +1935,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsWrite(IntPtr inStreamRef, ulong inWriteSize, IntPtr inBuffer,
         out ulong outWrittenSize);
 
@@ -1958,7 +1961,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSeek(IntPtr inStreamRef, long inSeekOffset, EdsSeekOrigin inSeekOrigin);
 
     /*-----------------------------------------------------------------------------
@@ -1975,7 +1978,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPosition(IntPtr inStreamRef, out ulong outPosition);
 
     /*-----------------------------------------------------------------------------
@@ -1991,7 +1994,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetLength(IntPtr inStreamRef, out ulong outLength);
 
     /*-----------------------------------------------------------------------------
@@ -2013,7 +2016,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCopyData(IntPtr inStreamRef, ulong inWriteSize, IntPtr outStreamRef);
 
     /*-----------------------------------------------------------------------------
@@ -2046,7 +2049,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetProgressCallback(IntPtr inRef, EdsProgressCallback inProgressFunc,
         EdsProgressOption inProgressOption, IntPtr inContext);
 
@@ -2074,7 +2077,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateImageRef(IntPtr inStreamRef, out IntPtr outImageRef);
 
     /*-----------------------------------------------------------------------------
@@ -2104,7 +2107,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetImageInfo(IntPtr inImageRef, EdsImageSource inImageSource,
         out EdsImageInfo outImageInfo);
 
@@ -2148,7 +2151,7 @@ internal class EDSDK
     //                      the image.
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetImage(IntPtr inImageRef, EdsImageSource inImageSource,
         EdsTargetImageType inImageType, EdsRect inSrcRect, EdsSize inDstSize, IntPtr outStreamRef);
 
@@ -2171,7 +2174,7 @@ internal class EDSDK
    //
    //  Returns:    Any of the sdk errors.
    -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetCameraAddedHandler(EdsCameraAddedHandler inCameraAddedHandler,
         IntPtr inContext);
 
@@ -2195,7 +2198,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetPropertyEventHandler(IntPtr inCameraRef, uint inEvnet,
         EdsPropertyEventHandler inPropertyEventHandler, IntPtr inContext);
 
@@ -2221,7 +2224,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetObjectEventHandler(IntPtr inCameraRef, uint inEvnet,
         EdsObjectEventHandler inObjectEventHandler, IntPtr inContext);
 
@@ -2246,7 +2249,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetCameraStateEventHandler(IntPtr inCameraRef, uint inEvnet,
         EdsStateEventHandler inStateEventHandler, IntPtr inContext);
 
@@ -2266,7 +2269,7 @@ internal class EDSDK
     //
     //  Returns:   Any of the sdk errors.
     ------------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetFramePoint(IntPtr inCameraRef, EdsPoint inFramePoint, [MarshalAs(UnmanagedType.U1)] bool inLockAfFrame);
 
     /*-----------------------------------------------------------------------------
@@ -2281,7 +2284,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateEvfImageRef(IntPtr inStreamRef, out IntPtr outEvfImageRef);
 
 
@@ -2304,7 +2307,7 @@ internal class EDSDK
     //
     //  Returns:    Any of the sdk errors.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsDownloadEvfImage(IntPtr inCameraRef, IntPtr outEvfImageRef);
 
     /*-----------------------------------------------------------------------------
@@ -2315,7 +2318,7 @@ internal class EDSDK
     //      Same as EdsGetPropertyDesc, for properties with 64-bit values
     //      (e.g. kEdsPropID_MovieParamEx). Added in EDSDK 13.19.0.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetPropertyDescEx(IntPtr inRef, uint inPropertyID,
         out EdsPropertyDescEx outPropertyDesc);
 
@@ -2335,13 +2338,13 @@ internal class EDSDK
     //      Creates the object used to get and set flash-related settings
     //      (kEdsPropID_Flash_Target, kEdsPropID_Flash_Firing). Added in EDSDK 13.19.0.
     -----------------------------------------------------------------------------*/
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsCreateFlashSettingRef(IntPtr inCameraRef, out IntPtr outFlashRef);
 
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsGetCsdFileData(IntPtr inCameraRef, IntPtr outStream);
 
-    [DllImport("EDSDK.dll")]
+    [DllImport(Library)]
     public static extern uint EdsSetCsdFileData(IntPtr inCameraRef, int inDataSize, IntPtr inDataValue);
 
     #endregion
