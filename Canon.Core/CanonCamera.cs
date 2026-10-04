@@ -277,9 +277,7 @@ public sealed class CanonCamera : IDisposable
             {
                 try
                 {
-                    // Give the camera a moment to be ready before opening the session.
-                    await Task.Delay(500);
-                    await ConnectAsync();
+                    await ConnectPluggedCameraAsync();
 
                     if (_liveViewRequested)
                         await StartLiveViewAsync();
@@ -292,6 +290,31 @@ public sealed class CanonCamera : IDisposable
         }
 
         return EDSDK.EDS_ERR_OK;
+    }
+
+    /// <summary>
+    /// Connects to a camera that was just plugged in, retrying for about 10 s: on Linux the SDK lists the camera
+    /// a few seconds after raising the camera added event.
+    /// </summary>
+    private async Task ConnectPluggedCameraAsync()
+    {
+        const int attempts = 20;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            // Give the camera a moment to be ready before opening the session.
+            await Task.Delay(500);
+
+            try
+            {
+                await ConnectAsync();
+                _logger?.LogDebug("Plugged camera connected (attempt {Attempt})", attempt);
+                return;
+            }
+            catch (EdsException) when (attempt < attempts && Volatile.Read(ref _disposed) == 0)
+            {
+            }
+        }
     }
 
     /// <summary>

@@ -27,6 +27,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 ### Fixed
 - Linux: the application crashed when the camera was turned off or unplugged. The session of a camera that is gone is
   no longer closed before the camera is released (the release closes it), as in the Canon samples.
+- Linux: a camera turned back on or plugged back in was not reconnected, because the SDK lists it a few seconds after
+  reporting it. The connection is now retried for about 10 s.
 
 ## [1.4.0.0] - 2026-09-30
 
