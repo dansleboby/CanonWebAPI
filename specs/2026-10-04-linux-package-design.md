@@ -102,9 +102,10 @@ Update: extract the new archive, run its `install.sh`.
 ### 3. Release workflow and CI
 
 A PowerShell script, `tools/Test-Package.ps1`, checks a published package: it starts the executable with
-`--urls http://localhost:5000 --AutoUpdate:Enabled=false`, polls `GET /status` for up to 60 s, and passes when the
-answer is HTTP 200 with an `error` containing `No Canon camera detected` (the runners have no camera; a missing or
-unloadable `EDSDK.dll` / `libEDSDK.so` gives another error). It stops the executable and prints its output on failure.
+`--urls http://localhost:5000 --AutoUpdate:Enabled=false` from a temporary copy of its folder (its logs stay out of
+the package), polls `GET /status` for up to 60 s, and passes when the answer is HTTP 200 with `connected: true` or an
+`error` containing `No Canon camera detected` (the runners have no camera; a missing or unloadable `EDSDK.dll` /
+`libEDSDK.so` gives another error). It stops the executable and prints its output on failure.
 PowerShell 7 is installed on the GitHub Windows and Ubuntu runners.
 
 `.github/workflows/build.yml` (tag `v*`), jobs:
@@ -117,7 +118,9 @@ PowerShell 7 is installed on the GitHub Windows and Ubuntu runners.
 3. `release` (ubuntu-latest), when both succeeded: downloads the two archives, creates the GitHub release with both
    (generated notes, as today), then writes and commits `docs/autoupdate.xml` (Windows zip URL, as today).
 
-When the Windows or Linux job fails, nothing is released and the feed is not updated.
+When the Windows or Linux job fails, nothing is released and the feed is not updated. The workflow can also be run by
+hand from the Actions tab (`workflow_dispatch`): a dry run of `prepare` (no tag check, no version commit), `windows` and
+`linux` that publishes nothing, to check the pipeline on `main` before tagging.
 
 `.github/workflows/ci.yml` (pull requests and `main`): the Windows job also publishes win-x64 and runs
 `Test-Package.ps1`; a new Linux job (ubuntu-latest) restores, builds, tests, publishes linux-x64 and runs
