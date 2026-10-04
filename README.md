@@ -28,7 +28,7 @@ A web API for remotely controlling Canon DSLR and mirrorless cameras. This proje
 *   Retrieve the last taken picture.
 *   Automatic reconnection when the camera is turned off or unplugged and plugged back (hot plug).
 *   OpenAPI document and Swagger UI.
-*   **Automatic updates** via AutoUpdater.NET integration.
+*   **Automatic updates** via AutoUpdater.NET integration (Windows).
 *   **Version display** in console on startup.
 
 ## Project Structure
@@ -39,7 +39,7 @@ The solution is divided into the following projects:
 *   `Canon.Core`: A .NET library that wraps the Canon EDSDK, providing a higher-level interface to interact with the camera.
 *   `Canon.Core.Tests`: Unit tests (xUnit) of `Canon.Core` that do not need a camera.
 *   `Canon.API.Tests`: Unit tests (xUnit) of the error mapping, the request models and the log levels of `Canon.API`.
-*   `EDSDK`: Contains the Canon EDSDK 13.20.21 64-bit libraries (`EDSDK.dll`, `EdsImage.dll`).
+*   `EDSDK`: Canon EDSDK 13.20.21 64-bit libraries: `EDSDK.dll` and `EdsImage.dll` (Windows), `linux-x64/libEDSDK.so` (Linux).
 
 ## Getting Started
 
@@ -49,12 +49,12 @@ The solution is divided into the following projects:
 *   The camera connected to the computer via USB.
 *   **.NET 10 SDK** (or newer) to build the project.
 *   The Canon EOS Utility software should not be running, as it can prevent this application from connecting to the camera.
-*   **Windows** operating system (x64 architecture required).
+*   **Windows** or **Linux** (x64). On Linux, see [Running on Linux](#running-on-linux).
 
 ### Installation
 
 1.  Clone this repository.
-2.  Ensure the `EDSDK` folder, containing `EDSDK.dll` and `EdsImage.dll`, is present in the project's root directory. These files are essential for the `Canon.Core` library to communicate with the camera.
+2.  Ensure the `EDSDK` folder is present in the project's root directory: `EDSDK.dll` and `EdsImage.dll` on Windows, `linux-x64/libEDSDK.so` on Linux. These files are essential for the `Canon.Core` library to communicate with the camera.
 3.  Build the solution using Visual Studio or the `dotnet build` command.
 4.  Run the `Canon.API` project. This will start the web server, on `http://localhost:5000` by default for the release
     executable (`http://localhost:5159` with `dotnet run`); set `ASPNETCORE_URLS` (or `--urls`) to change it.
@@ -73,7 +73,7 @@ Setting values are sent as a JSON string, e.g. `"100"` with `Content-Type: appli
 | GET    | `/mode`                      | Gets the shooting mode (mode dial position, whether exposure settings can be changed, movie mode). | N/A |
 | GET    | `/temperature`               | Gets the restrictions applied by the camera because of its internal temperature. | N/A |
 | GET    | `/flash`                     | Gets the "flash firing" setting as last set by the API (a change made in the camera menu is not reported by the SDK). | N/A |
-| POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. | `"fire"` or `"off"` |
+| POST   | `/flash`                     | Sets the "flash firing" setting. The camera must be in P, Tv, Av or M. A running live view is paused while the setting is written. | `"fire"` or `"off"` |
 | GET    | `/settings`                  | Shooting mode, plus ISO, aperture, shutter speed, exposure compensation and white balance in one call: `{ value, supportedValues, settable }` each (`settable`: allowed by the shooting mode and the camera accepts at least one value now). | N/A |
 | POST   | `/settings`                  | Applies several settings at once (e.g. a day / night preset). Every value is checked before anything is written, then they are written in a fixed order (iso, aperture, shutterSpeed, exposureCompensation, whiteBalance), never during a capture. Returns the settings read back from the camera, as `GET /settings`. Omitted fields are left unchanged; an unknown field is refused (400). | `{ "iso": "400", "aperture": "5.6", "shutterSpeed": "1/125", "exposureCompensation": "0", "whiteBalance": "Daylight" }` |
 | GET    | `/iso`                       | Gets the current ISO speed and a list of supported values. | N/A                    |
@@ -166,15 +166,15 @@ settings that differ from the defaults, e.g.:
 | `Canon:LiveViewSmallImage` | `false` | Uses the smaller live view image (less bandwidth, lower resolution; not supported by every camera). |
 | `Canon:KeepCameraScreenOn` | `false` | Keeps the camera screen on during the live view. When `false`, the live view is sent to the PC only, which turns the camera screen off and locks its buttons. |
 | `Canon:PreventAutoPowerOff` | `true` | Extends the camera auto power off timer when the camera announces it will turn off. |
-| `Canon:ForceFlashFiring` | `true` | Sets "flash firing" to Fire when the camera connects and before every capture, so a flash on the accessory shoe always fires even if the setting was changed on the camera. Requires P, Tv, Av or M. |
+| `Canon:ForceFlashFiring` | `true` | Sets "flash firing" to Fire when the camera connects, before the live view starts and before a capture taken without live view, so a flash on the accessory shoe always fires even if the setting was changed on the camera. Never while the live view runs: writing the flash setting then freezes the camera. Requires P, Tv, Av or M. |
 | `Canon:FlashTarget` | `Unspecified` | Target of the flash settings: `Unspecified` (e.g. studio flash triggered by the shoe center contact) or `External` (flash communicating with the camera). |
 | `Canon:BusyRetryCount` / `BusyRetryDelayMilliseconds` | `3` / `500` | Retries when the camera answers "device busy". |
 | `LiveView:FrameIntervalMilliseconds` | `30` | Delay between two live view frames. |
 | `LiveView:IdleStopDelayMilliseconds` | `3000` | The camera live view stops this long after the last `/videostream` client left. |
 | `LiveView:ErrorRetryDelayMilliseconds` | `1000` | Delay before retrying after a live view error (e.g. camera disconnected). |
-| `AutoUpdate:Enabled` | `true` | Checks for updates at startup. |
-| `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. |
-| `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). |
+| `AutoUpdate:Enabled` | `true` | Checks for updates at startup. Windows only. |
+| `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. Windows only. |
+| `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). `Canon.Core`: `Debug` logs every EDSDK event and each step of a capture (UI lock, flash settings, shutter button, transfer) with its result and duration. |
 
 ## Automatic Updates
 
@@ -184,6 +184,8 @@ This application includes automatic update functionality powered by AutoUpdater.
 *   **Seamless updates** without requiring admin privileges
 *   Updates are downloaded from GitHub releases automatically
 *   `appsettings.json` is replaced by each update: keep the settings of a photo booth in `appsettings.Local.json`
+
+Linux has no automatic update yet (the `net10.0` target does not include AutoUpdater.NET).
 
 ## Development & Building
 
@@ -201,7 +203,7 @@ dotnet restore CanonSDK.sln
 dotnet build CanonSDK.sln --configuration Release
 
 # Run the API
-dotnet run --project Canon.API
+dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 ```
 
 ### Creating Releases
@@ -220,7 +222,36 @@ This project uses automated GitHub Actions for releases:
 ### Running the API
 
 ```bash
-dotnet run --project Canon.API
+dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
+```
+
+### Running on Linux
+
+The `net10.0` target of `Canon.API` runs on Linux x64 with the Linux version of the EDSDK (`EDSDK/linux-x64/libEDSDK.so`).
+There is no automatic update and no release package for Linux yet: run it from the sources.
+
+Prerequisites: .NET 10 SDK and `libusb-1.0` (Ubuntu: `sudo apt install dotnet-sdk-10.0 libusb-1.0-0`).
+
+```bash
+dotnet run --project Canon.API -f net10.0 --launch-profile http
+
+# Every EDSDK event and each step of a capture (result and duration) in the logs:
+dotnet run --project Canon.API -f net10.0 --launch-profile http -- --Logging:LogLevel:Canon.Core=Debug
+```
+
+*   The user running the API needs read/write access to the camera USB device; desktop sessions get it automatically.
+*   Nothing else may use the camera: if the desktop mounted it, unmount it (GNOME: `gio mount -l`, then `gio mount -u <location>`), and do not pass it to a virtual machine.
+*   Logs: console and `Canon.API/bin/Debug/net10.0/logs/`.
+
+### Camera Test Script
+
+`tools/Test-Camera.ps1` (Windows PowerShell 5.1 or PowerShell 7, with `curl`) runs the photo booth checks against the API:
+live view, captures, flash changes during the live view and a camera power cycle. Copy it with `tools/Test-Camera.cmd`
+next to `Canon.API.exe`, then run `Test-Camera.cmd`. It starts the API with detailed camera logs when it does not
+answer, and saves the pictures, the result of every step and the API log in `test-results\<date-time>`.
+
+```powershell
+.\Test-Camera.ps1 -Captures 6 -SkipPowerCycle   # options: -BaseUrl, -CameraTimeoutSeconds, -NoBrowser
 ```
 
 ### Unit Tests
@@ -258,11 +289,15 @@ Windows containers cannot access USB devices, so the camera is not reachable fro
 
 ### OpenAPI Document
 
-The document is always available at `/openapi/v1.json`. To regenerate `docs/openapi.json` at build time (on Windows):
+The document is always available at `/openapi/v1.json`. To regenerate `docs/openapi.json` at build time (Windows or Linux):
 
 ```bash
-dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
+dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments
 ```
+
+The build-time hook of the `Microsoft.Extensions.ApiDescription.Server` package skips the inner builds of a multi-targeted
+project, so `-p:OpenApiGenerateDocumentsOnBuild=true` with `-f` generates nothing; the `net10.0` target keeps the Windows
+update check out of the generator, which runs the application's entry point.
 
 ## Compatibility
 
@@ -271,8 +306,12 @@ dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows 10/11 (x64)
+*   **OS**: Windows 10/11 (x64); Linux x64 from the sources (see [Running on Linux](#running-on-linux))
 *   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 
 > **Note**: While this software has been tested with the above camera models, it should work with other Canon cameras that support the EDSDK. However, functionality may vary depending on the specific camera model and its supported features.
+
+## License notices
+
+The Canon EDSDK libraries in `EDSDK/` are based in part on the work of the Independent JPEG Group.

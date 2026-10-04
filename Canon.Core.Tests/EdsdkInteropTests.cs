@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Canon.Core;
@@ -6,10 +7,23 @@ using Canon.Core;
 namespace Canon.Core.Tests;
 
 /// <summary>
-/// Layouts checked against EDSDKTypes.h (13.20.21), x64.
+/// P/Invoke contract: library name, and layouts checked against EDSDKTypes.h (13.20.21), x64.
 /// </summary>
 public class EdsdkInteropTests
 {
+    [Fact]
+    public void Every_import_uses_the_cross_platform_library_name()
+    {
+        var imports = typeof(EDSDK).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            .Select(method => method.GetCustomAttribute<DllImportAttribute>())
+            .OfType<DllImportAttribute>()
+            .ToList();
+
+        // Guards against a reflection change returning nothing, which would make the test pass vacuously.
+        Assert.True(imports.Count > 50, $"{imports.Count} imports found");
+        Assert.All(imports, import => Assert.Equal("EDSDK", import.Value));
+    }
+
     [Fact]
     public void Structures_have_the_size_of_the_headers()
     {

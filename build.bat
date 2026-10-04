@@ -15,7 +15,7 @@ dotnet build Canon.API --configuration Release --no-restore
 
 rem Publish Canon.API for deployment as standalone executable
 echo Publishing Canon.API as standalone executable...
-dotnet publish Canon.API/Canon.API.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish --verbosity minimal
+dotnet publish Canon.API/Canon.API.csproj --configuration Release --framework net10.0-windows --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish --verbosity minimal
 
 echo.
 echo Build completed successfully!

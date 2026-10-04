@@ -46,7 +46,7 @@ RUN dotnet test Canon.Core.Tests/Canon.Core.Tests.csproj -c Release --no-build `
 # Publish: same self-contained single-file executable as the GitHub release
 # ---------------------------------------------------------------------------
 FROM test AS publish
-RUN dotnet publish Canon.API/Canon.API.csproj -c Release -r win-x64 --self-contained true `
+RUN dotnet publish Canon.API/Canon.API.csproj -c Release -f net10.0-windows -r win-x64 --self-contained true `
     -p:PublishSingleFile=true --no-restore -o C:\publish
 
 # ---------------------------------------------------------------------------

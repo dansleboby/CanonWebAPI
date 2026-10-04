@@ -69,13 +69,13 @@ public class CanonController(ILogger<CanonController> logger, CanonCamera camera
 
     [HttpGet("flash")]
     [EndpointSummary("State of the \"flash firing\" setting")]
-    [EndpointDescription("The SDK only reports values set remotely: 'firing' is the value last set by the API (null before the first one). A change made in the camera menu is not visible. With Canon:ForceFlashFiring (default), the setting is set to Fire when the camera connects and before every capture.")]
+    [EndpointDescription("The SDK only reports values set remotely: 'firing' is the value last set by the API (null before the first one). A change made in the camera menu is not visible. With Canon:ForceFlashFiring (default), the setting is set to Fire when the camera connects, before the live view starts and before a capture taken without live view (never while the live view runs, which would freeze the camera).")]
     [ProducesResponseType<FlashStatus>(StatusCodes.Status200OK, "application/json")]
     public async Task<IActionResult> GetFlash() => Ok(await camera.GetFlashStatus());
 
     [HttpPost("flash")]
     [EndpointSummary("Set the \"flash firing\" setting (\"fire\" or \"off\")")]
-    [EndpointDescription("The camera must be in P, Tv, Av or M. With Canon:ForceFlashFiring (default), the setting is set back to Fire before the next capture.")]
+    [EndpointDescription("The camera must be in P, Tv, Av or M. A running live view is paused while the setting is written, because writing it during the live view freezes the camera. With Canon:ForceFlashFiring (default), the setting is set back to Fire the next time the live view starts or before the next capture taken without live view.")]
     [ProducesResponseType<FlashStatus>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]

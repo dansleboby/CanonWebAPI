@@ -7,6 +7,41 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+### Added
+- `tools/Test-Camera.ps1` (with `Test-Camera.cmd`): runs the photo booth camera checks against the API (live view,
+  captures, flash changes during the live view, power cycle) and saves the pictures, the results and the API log.
+- Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK
+  (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update and no release package on Linux yet.
+- Debug logs (`Logging:LogLevel:Canon.Core` = `Debug`): every EDSDK event, and each step of a capture (UI lock, flash
+  settings, shutter button, transfer) with its result and duration.
+
+### Changed
+- `Canon.API` has two target frameworks: `dotnet run` and `dotnet publish` need `-f net10.0-windows` (Windows) or
+  `-f net10.0` (Linux). `Canon.Core` and the unit tests target `net10.0`.
+- A failed UI unlock after setting the flash is logged as a warning; it was ignored.
+- The problem title returned when the Canon EDSDK cannot be loaded now names both platforms: "Canon EDSDK could not be
+  loaded (EDSDK.dll or libEDSDK.so missing, wrong architecture, or libusb-1.0 missing on Linux)" (was "...(EDSDK.dll
+  missing or wrong architecture)"). Client-visible text.
+- Regenerating `docs/openapi.json` at build time now uses
+  `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments` (Windows or Linux); the former
+  `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
+
+### Fixed
+- The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
+  (503 "Camera busy"), no picture was returned, and the camera did not respond until it was turned off and on. Writing
+  the flash setting during the live view freezes the camera (EOS R100), and `Canon:ForceFlashFiring` wrote it before
+  every capture. It is now written when the camera connects, before the live view starts (once per live view session)
+  and before a capture taken without live view; `POST /flash` pauses the live view while it writes it. With
+  `Canon:ForceFlashFiring`, a value set with `POST /flash` therefore stays until the live view stops (it was set back to
+  Fire before every capture), and `GET /flash` returns the last value set while the live view runs.
+- Linux: the application crashed when the camera was turned off or unplugged. The SDK closes the session itself then,
+  and releasing the camera closed it a second time, which crashed (`CLinuxPtpHelper::Terminate` from `EdsRelease`). On
+  Linux the camera object of a camera that is gone is now left to the SDK.
+- The session of a camera that is gone (turned off, unplugged, or a call failed because it is disconnected) is no longer
+  closed before the camera is released, on Windows too, as in the Canon samples.
+- Linux: a camera turned back on or plugged back in was not reconnected, because the SDK lists it a moment after
+  reporting it (about 1 s). The connection is now retried for about 10 s.
+
 ## [1.4.0.0] - 2026-09-30
 
 ### Added

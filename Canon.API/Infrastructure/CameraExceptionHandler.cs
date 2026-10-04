@@ -115,7 +115,7 @@ public sealed class CameraExceptionHandler(ILogger<CameraExceptionHandler> logge
         EdsException { IsRefused: true } => (StatusCodes.Status409Conflict, "Operation refused by the camera"),
         EdsException { IsInvalidValue: true } => (StatusCodes.Status400BadRequest, "Value not accepted by the camera"),
         EdsException => (StatusCodes.Status500InternalServerError, "Camera error"),
-        DllNotFoundException or BadImageFormatException => (StatusCodes.Status500InternalServerError, "Canon EDSDK could not be loaded (EDSDK.dll missing or wrong architecture)"),
+        DllNotFoundException or BadImageFormatException => (StatusCodes.Status500InternalServerError, "Canon EDSDK could not be loaded (EDSDK.dll or libEDSDK.so missing, wrong architecture, or libusb-1.0 missing on Linux)"),
         _ => (StatusCodes.Status500InternalServerError, "Internal server error")
     };
 }
