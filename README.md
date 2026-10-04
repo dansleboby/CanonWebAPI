@@ -243,6 +243,17 @@ dotnet run --project Canon.API -f net10.0 --launch-profile http -- --Logging:Log
 *   Nothing else may use the camera: if the desktop mounted it, unmount it (GNOME: `gio mount -l`, then `gio mount -u <location>`), and do not pass it to a virtual machine.
 *   Logs: console and `Canon.API/bin/Debug/net10.0/logs/`.
 
+### Camera Test Script
+
+`tools/Test-Camera.ps1` (Windows PowerShell 5.1 or PowerShell 7, with `curl`) runs the photo booth checks against the API:
+live view, captures, flash changes during the live view and a camera power cycle. Copy it with `tools/Test-Camera.cmd`
+next to `Canon.API.exe`, then run `Test-Camera.cmd`. It starts the API with detailed camera logs when it does not
+answer, and saves the pictures, the result of every step and the API log in `test-results\<date-time>`.
+
+```powershell
+.\Test-Camera.ps1 -Captures 6 -SkipPowerCycle   # options: -BaseUrl, -CameraTimeoutSeconds, -NoBrowser
+```
+
 ### Unit Tests
 
 ```bash

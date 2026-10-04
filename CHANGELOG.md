@@ -8,6 +8,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 ## [Unreleased]
 
 ### Added
+- `tools/Test-Camera.ps1` (with `Test-Camera.cmd`): runs the photo booth camera checks against the API (live view,
+  captures, flash changes during the live view, power cycle) and saves the pictures, the results and the API log.
 - Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK
   (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update and no release package on Linux yet.
 - Debug logs (`Logging:LogLevel:Canon.Core` = `Debug`): every EDSDK event, and each step of a capture (UI lock, flash
