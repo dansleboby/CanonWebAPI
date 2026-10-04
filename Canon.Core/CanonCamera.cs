@@ -904,6 +904,7 @@ public sealed class CanonCamera : IDisposable
             }
             catch (TimeoutException)
             {
+                _logger?.LogDebug("Capture timed out after {Duration} ms", clock.ElapsedMilliseconds);
                 _staleTransfers = true;
                 throw new TimeoutException(
                     $"The camera did not deliver a picture within {timeout.TotalSeconds:0.#} s. " +
@@ -913,6 +914,11 @@ public sealed class CanonCamera : IDisposable
             {
                 // The shot was taken: its file may still arrive and must not answer the next capture.
                 _staleTransfers = true;
+                throw;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                _logger?.LogDebug("Capture failed after {Duration} ms: {Error}", clock.ElapsedMilliseconds, e.Message);
                 throw;
             }
             finally
