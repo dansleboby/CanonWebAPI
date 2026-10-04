@@ -107,7 +107,7 @@ jobs:
       run: dotnet test CanonSDK.sln --configuration Release --no-build
       
     - name: Publish Canon.API as standalone executable
-      run: dotnet publish Canon.API/Canon.API.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish
+      run: dotnet publish Canon.API/Canon.API.csproj --configuration Release --framework net10.0-windows --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish
       
     - name: Create release package
       run: |

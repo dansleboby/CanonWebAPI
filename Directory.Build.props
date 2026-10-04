@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <!-- Allows building the net10.0-windows projects (and running the unit tests) on Linux/macOS, e.g. in CI or dev containers. -->
+    <!-- Allows building the Windows target of Canon.API on Linux/macOS, e.g. in CI or dev containers. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 </Project>

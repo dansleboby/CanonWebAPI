@@ -10,7 +10,7 @@ CanonWebAPI is a .NET 10 web API for remotely controlling Canon DSLR and mirrorl
 
 The solution consists of 4 projects:
 
-- **Canon.API**: ASP.NET Core Web API (main entry point)
+- **Canon.API**: ASP.NET Core Web API (main entry point); targets `net10.0-windows` (Windows release, AutoUpdater.NET) and `net10.0` (Linux, no automatic update)
 - **Canon.Core**: Core library wrapping Canon EDSDK functionality
 - **Canon.Core.Tests**: xUnit unit tests of Canon.Core (no camera needed, run on Linux too)
 - **Canon.API.Tests**: xUnit unit tests of the pure parts of Canon.API, compiled from linked sources (Canon.API needs the Windows Desktop runtime)
@@ -30,9 +30,10 @@ The solution consists of 4 projects:
 ### Dependencies
 
 - Requires Canon EDSDK 13.20.21 **64-bit** DLLs (`EDSDK.dll`, `EdsImage.dll`, from `EDSDK_64/Dll` of the SDK) in the EDSDK folder
+- Linux: `EDSDK/linux-x64/libEDSDK.so` (from `EDSDK/Library/x86_64` of the 13.20.21 Linux SDK), needs `libusb-1.0`
 - Uses Serilog for logging
 - Swagger/OpenAPI for API documentation
-- Platform target: x64 (Windows only)
+- Platform target: x64 (Windows; Linux through the `net10.0` target of Canon.API)
 
 ## Development Commands
 
@@ -43,7 +44,7 @@ dotnet build CanonSDK.sln
 
 ### Run API Server
 ```bash
-dotnet run --project Canon.API
+dotnet run --project Canon.API -f net10.0-windows   # Linux: -f net10.0 --launch-profile http
 ```
 
 ### Run Unit Tests
@@ -88,7 +89,7 @@ Errors are problem details: 400 invalid value, 409 capture refused or setting lo
 - The camera can be connected via USB before or after the application starts (automatic connection and reconnection)
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
-- All projects target .NET 10 (`net10.0-windows`) with Windows-specific dependencies
+- Canon.Core and the tests target `net10.0`; Canon.API targets `net10.0-windows` (release, AutoUpdater.NET) and `net10.0` (Linux). Publish the release with `-f net10.0-windows`
 - Uses structured logging with Serilog (logs to console and `logs/canon-api.log` next to the executable; levels from `Logging:LogLevel`)
 - Content root is the executable folder: settings files are read next to the executable whatever the working directory
 - Operator settings go in `appsettings.Local.json`, never shipped: automatic updates overwrite `appsettings.json`

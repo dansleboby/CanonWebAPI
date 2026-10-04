@@ -1,6 +1,8 @@
 using Canon.API.Infrastructure;
 using Serilog;
+#if WINDOWS
 using AutoUpdaterDotNET;
+#endif
 
 // Next to the executable, whatever the working directory (shortcut, scheduled task...).
 var logFile = Path.Combine(AppContext.BaseDirectory, "logs", "canon-api.log");
@@ -48,10 +50,14 @@ try
 
     var app = builder.Build();
 
+#if WINDOWS
     if (app.Configuration.GetValue("AutoUpdate:Enabled", true))
         ConfigureAutoUpdater(app);
     else
         Log.Information("Automatic updates are disabled");
+#else
+    Log.Information("Automatic updates are not available on this platform");
+#endif
 
     app.UseExceptionHandler();
 
@@ -75,6 +81,7 @@ finally
     Log.CloseAndFlush();
 }
 
+#if WINDOWS
 static void ConfigureAutoUpdater(WebApplication app)
 {
     // Configure AutoUpdater.NET for automatic updates
@@ -99,3 +106,4 @@ static void ConfigureAutoUpdater(WebApplication app)
 
     AutoUpdater.Start(app.Configuration["AutoUpdate:Url"] ?? "https://dansleboby.github.io/CanonWebAPI/autoupdate.xml");
 }
+#endif

@@ -9,10 +9,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
-  <!--
-    Canon.API needs the Windows Desktop runtime (AutoUpdater.NET): referencing it would make these tests Windows only.
-    The parts under test do not depend on it, so their sources are compiled here instead.
-  -->
+  <!-- The parts under test are compiled from the Canon.API sources, so these tests do not depend on the API project and its packages. -->
   <ItemGroup>
     <Compile Include="..\Canon.API\Infrastructure\CameraExceptionHandler.cs" Link="Linked\CameraExceptionHandler.cs" />
     <Compile Include="..\Canon.API\Infrastructure\LogLevels.cs" Link="Linked\LogLevels.cs" />

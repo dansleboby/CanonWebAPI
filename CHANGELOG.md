@@ -7,6 +7,14 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+### Added
+- Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK
+  (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update and no release package on Linux yet.
+
+### Changed
+- `Canon.API` has two target frameworks: `dotnet run` and `dotnet publish` need `-f net10.0-windows` (Windows) or
+  `-f net10.0` (Linux). `Canon.Core` and the unit tests target `net10.0`.
+
 ## [1.4.0.0] - 2026-09-30
 
 ### Added

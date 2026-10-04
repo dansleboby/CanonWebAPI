@@ -39,7 +39,7 @@ The solution is divided into the following projects:
 *   `Canon.Core`: A .NET library that wraps the Canon EDSDK, providing a higher-level interface to interact with the camera.
 *   `Canon.Core.Tests`: Unit tests (xUnit) of `Canon.Core` that do not need a camera.
 *   `Canon.API.Tests`: Unit tests (xUnit) of the error mapping, the request models and the log levels of `Canon.API`.
-*   `EDSDK`: Contains the Canon EDSDK 13.20.21 64-bit libraries (`EDSDK.dll`, `EdsImage.dll`).
+*   `EDSDK`: Canon EDSDK 13.20.21 64-bit libraries: `EDSDK.dll` and `EdsImage.dll` (Windows), `linux-x64/libEDSDK.so` (Linux).
 
 ## Getting Started
 
@@ -49,12 +49,12 @@ The solution is divided into the following projects:
 *   The camera connected to the computer via USB.
 *   **.NET 10 SDK** (or newer) to build the project.
 *   The Canon EOS Utility software should not be running, as it can prevent this application from connecting to the camera.
-*   **Windows** operating system (x64 architecture required).
+*   **Windows** or **Linux** (x64). On Linux, see [Running on Linux](#running-on-linux).
 
 ### Installation
 
 1.  Clone this repository.
-2.  Ensure the `EDSDK` folder, containing `EDSDK.dll` and `EdsImage.dll`, is present in the project's root directory. These files are essential for the `Canon.Core` library to communicate with the camera.
+2.  Ensure the `EDSDK` folder is present in the project's root directory: `EDSDK.dll` and `EdsImage.dll` on Windows, `linux-x64/libEDSDK.so` on Linux. These files are essential for the `Canon.Core` library to communicate with the camera.
 3.  Build the solution using Visual Studio or the `dotnet build` command.
 4.  Run the `Canon.API` project. This will start the web server, on `http://localhost:5000` by default for the release
     executable (`http://localhost:5159` with `dotnet run`); set `ASPNETCORE_URLS` (or `--urls`) to change it.
@@ -201,7 +201,7 @@ dotnet restore CanonSDK.sln
 dotnet build CanonSDK.sln --configuration Release
 
 # Run the API
-dotnet run --project Canon.API
+dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 ```
 
 ### Creating Releases
@@ -220,8 +220,23 @@ This project uses automated GitHub Actions for releases:
 ### Running the API
 
 ```bash
-dotnet run --project Canon.API
+dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 ```
+
+### Running on Linux
+
+The `net10.0` target of `Canon.API` runs on Linux x64 with the Linux version of the EDSDK (`EDSDK/linux-x64/libEDSDK.so`).
+There is no automatic update and no release package for Linux yet: run it from the sources.
+
+Prerequisites: .NET 10 SDK and `libusb-1.0` (Ubuntu: `sudo apt install dotnet-sdk-10.0 libusb-1.0-0`).
+
+```bash
+dotnet run --project Canon.API -f net10.0 --launch-profile http
+```
+
+*   The user running the API needs read/write access to the camera USB device; desktop sessions get it automatically.
+*   Nothing else may use the camera: if the desktop mounted it, unmount it (GNOME: `gio mount -l`, then `gio mount -u <location>`), and do not pass it to a virtual machine.
+*   Logs: console and `Canon.API/bin/Debug/net10.0/logs/`.
 
 ### Unit Tests
 
@@ -258,10 +273,10 @@ Windows containers cannot access USB devices, so the camera is not reachable fro
 
 ### OpenAPI Document
 
-The document is always available at `/openapi/v1.json`. To regenerate `docs/openapi.json` at build time (on Windows):
+The document is always available at `/openapi/v1.json`. To regenerate `docs/openapi.json` at build time (Windows or Linux):
 
 ```bash
-dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
+dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments
 ```
 
 ## Compatibility
@@ -271,7 +286,7 @@ dotnet build Canon.API -p:OpenApiGenerateDocumentsOnBuild=true
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows 10/11 (x64)
+*   **OS**: Windows 10/11 (x64); Linux x64 from the sources (see [Running on Linux](#running-on-linux))
 *   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 
