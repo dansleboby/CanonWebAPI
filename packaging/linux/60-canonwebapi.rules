@@ -1,0 +1,2 @@
+# CanonWebAPI: Canon cameras (USB vendor 04a9) can be opened by the canonwebapi service user.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="04a9", MODE="0660", GROUP="canonwebapi"

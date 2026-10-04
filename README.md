@@ -187,6 +187,32 @@ This application includes automatic update functionality powered by AutoUpdater.
 
 Linux has no automatic update yet (the `net10.0` target does not include AutoUpdater.NET).
 
+## Installing on Linux
+
+Each release also provides `CanonWebAPI-linux-x64.tar.gz`: a self-contained executable for Linux x64 (no .NET to
+install) with the Linux version of the EDSDK. Requirements: glibc 2.27 or later (e.g. Ubuntu 18.04, Debian 10 or
+later), `libusb-1.0` (`sudo apt install libusb-1.0-0`), and systemd for the service. There is no automatic update on
+Linux.
+
+```bash
+tar -xzf CanonWebAPI-linux-x64.tar.gz
+cd CanonWebAPI
+./Canon.API          # by hand: http://localhost:5000
+sudo ./install.sh    # or as a service started at boot
+```
+
+`install.sh` copies the files to `/opt/canonwebapi`, creates the `canonwebapi` system user, adds a udev rule that lets
+it open Canon cameras (USB vendor `04a9`), then installs, enables and starts the `canonwebapi` systemd service.
+
+*   Settings: `/opt/canonwebapi/appsettings.Local.json` (kept by updates), then `sudo systemctl restart canonwebapi`.
+*   Logs: `/opt/canonwebapi/logs/` and `journalctl -u canonwebapi`; state: `systemctl status canonwebapi`.
+*   Update: extract the new archive and run its `install.sh`.
+*   Uninstall: `sudo /opt/canonwebapi/install.sh --uninstall` removes the service, the udev rule, `/opt/canonwebapi`
+    (settings and logs included) and the `canonwebapi` user.
+*   Run by hand, the API needs read/write access to the camera USB device: desktop sessions get it, otherwise install
+    the service. A desktop can mount the camera (GNOME: gvfs) and hold it: unmount it (`gio mount -l`, then
+    `gio mount -u <location>`) or disable the automount.
+
 ## Development & Building
 
 ### Building from Source
@@ -228,7 +254,7 @@ dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 ### Running on Linux
 
 The `net10.0` target of `Canon.API` runs on Linux x64 with the Linux version of the EDSDK (`EDSDK/linux-x64/libEDSDK.so`).
-There is no automatic update and no release package for Linux yet: run it from the sources.
+To run a release, see [Installing on Linux](#installing-on-linux); this section runs it from the sources.
 
 Prerequisites: .NET 10 SDK and `libusb-1.0` (Ubuntu: `sudo apt install dotnet-sdk-10.0 libusb-1.0-0`).
 
@@ -306,7 +332,7 @@ update check out of the generator, which runs the application's entry point.
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows 10/11 (x64); Linux x64 from the sources (see [Running on Linux](#running-on-linux))
+*   **OS**: Windows 10/11 (x64): `CanonWebAPI.zip`; Linux x64 (glibc 2.27+, `libusb-1.0`): `CanonWebAPI-linux-x64.tar.gz` (see [Installing on Linux](#installing-on-linux))
 *   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 

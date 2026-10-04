@@ -1,0 +1,14 @@
+[Unit]
+Description=CanonWebAPI (Canon camera web API)
+After=network.target
+
+[Service]
+User=canonwebapi
+Group=canonwebapi
+WorkingDirectory=/opt/canonwebapi
+ExecStart=/opt/canonwebapi/Canon.API
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

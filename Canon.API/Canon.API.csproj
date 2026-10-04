@@ -28,6 +28,12 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
+  <!-- Linux package (self-contained single file for linux-x64). No native library self-extraction: none is needed,
+       and a service user has no home directory to extract to. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="logs\**" />
     <Content Remove="logs\**" />
@@ -78,6 +84,11 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
+  </ItemGroup>
+
+  <!-- Linux package: installer, systemd service and udev rule next to the executable (publish only). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <None Include="..\packaging\linux\*" Link="%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
