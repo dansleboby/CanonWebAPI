@@ -38,13 +38,17 @@ public sealed class CanonCamera : IDisposable
     private nint _cameraRef;
     private nint _flashRef;
     private bool? _flashFiring;
+    // Fire was written and the live view has not stopped since: starting the live view does not write it again.
+    // Each write keeps the camera busy for a moment, so a start retried after one would rewrite it in a loop.
+    private bool _flashFiringForced;
     private volatile string? _flashError;
 
     private volatile bool _connected;
     private volatile bool _liveViewActive;
     private volatile bool _liveViewRequested;
     private volatile bool _capturing;
-    // Set while the flash setting pauses the live view: frames are skipped so the live view is not restarted meanwhile.
+    // Set while the flash setting is written with the live view paused: frames are skipped and live view starts are
+    // left to it, so the live view is not restarted meanwhile.
     private volatile bool _liveViewPaused;
     private volatile PendingCapture? _pendingCapture;
     private volatile CapturedImage? _latestImage;
@@ -158,6 +162,8 @@ public sealed class CanonCamera : IDisposable
 
     private void ConnectCore()
     {
+        // A hot plug retry can still be queued behind the cleanup of Dispose, which terminates the SDK.
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         EnsureSdkInitialized();
 
         if (_cameraRef != nint.Zero)
@@ -190,7 +196,8 @@ public sealed class CanonCamera : IDisposable
 
             // Handlers are registered before the session is opened, as in the SDK samples, so no event is missed.
             EDSDK.EdsSetObjectEventHandler(camera, EDSDK.ObjectEvent_All, _onCameraObject, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to ObjectEvent");
-            EDSDK.EdsSetCameraStateEventHandler(camera, EDSDK.StateEvent_All, _onCameraStateChanged, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to StateEvent");
+            // The camera is the context: a camera left to the SDK after a disconnection can still raise events (Linux).
+            EDSDK.EdsSetCameraStateEventHandler(camera, EDSDK.StateEvent_All, _onCameraStateChanged, camera).ThrowIfEdSdkError("Failed to subscribe to StateEvent");
             EDSDK.EdsSetPropertyEventHandler(camera, EDSDK.PropertyEvent_All, _onCameraPropertyChanged, nint.Zero).ThrowIfEdSdkError("Failed to subscribe to PropertyEvent");
 
             EDSDK.EdsOpenSession(camera).ThrowIfEdSdkError("Failed to open camera session");
@@ -226,9 +233,10 @@ public sealed class CanonCamera : IDisposable
     /// Closes the session and releases the camera. Runs on the Canon thread.
     /// </summary>
     /// <param name="cameraGone">
-    /// True when the camera was turned off or unplugged. Its session is not closed, as in the Canon samples. On Linux the
-    /// SDK closes it itself while dispatching the removal, and releasing the camera closes it again: the second close
-    /// uses an object freed by the first one and crashes (CLinuxPtpHelper::Terminate). The camera is then left to the SDK.
+    /// True when the camera was turned off or unplugged, or a call failed because it is disconnected. Its session is not
+    /// closed, as in the Canon samples. On Linux the SDK closes it itself while dispatching the removal, and releasing
+    /// the camera closes it again: the second close uses an object freed by the first one and crashes
+    /// (CLinuxPtpHelper::Terminate). The camera is then left to the SDK.
     /// </param>
     private void DisconnectCore(string reason, nint expectedCamera = 0, bool cameraGone = false)
     {
@@ -254,6 +262,7 @@ public sealed class CanonCamera : IDisposable
             _flashRef = nint.Zero;
         }
         _flashFiring = null;
+        _flashFiringForced = false;
 
         if (!cameraGone)
             EDSDK.EdsCloseSession(camera);
@@ -297,8 +306,8 @@ public sealed class CanonCamera : IDisposable
     }
 
     /// <summary>
-    /// Connects to a camera that was just plugged in, retrying for about 10 s: on Linux the SDK lists the camera
-    /// a few seconds after raising the camera added event.
+    /// Connects to a camera that was just plugged in, retrying for about 10 s: on Linux the SDK can list the camera
+    /// only a moment after raising the camera added event (about 1 s on the EOS R100).
     /// </summary>
     private async Task ConnectPluggedCameraAsync()
     {
@@ -309,14 +318,18 @@ public sealed class CanonCamera : IDisposable
             // Give the camera a moment to be ready before opening the session.
             await Task.Delay(500);
 
+            if (Volatile.Read(ref _disposed) != 0)
+                return;
+
             try
             {
                 await ConnectAsync();
                 _logger?.LogDebug("Plugged camera connected (attempt {Attempt})", attempt);
                 return;
             }
-            catch (EdsException) when (attempt < attempts && Volatile.Read(ref _disposed) == 0)
+            catch (EdsException e) when (attempt < attempts)
             {
+                _logger?.LogDebug("Plugged camera not ready (attempt {Attempt}): {Message}", attempt, e.Message);
             }
         }
     }
@@ -441,9 +454,13 @@ public sealed class CanonCamera : IDisposable
         switch (inEvent)
         {
             case EDSDK.StateEvent_Shutdown:
-                // SDK calls are deferred until the callback has returned.
-                _connected = false;
-                _thread.Post(() => DisconnectCore("camera turned off or unplugged", cameraGone: true));
+                // Ignored when raised by a camera that is no longer the current one. SDK calls are deferred until the
+                // callback has returned.
+                if (inContext == _cameraRef)
+                {
+                    _connected = false;
+                    _thread.Post(() => DisconnectCore("camera turned off or unplugged", inContext, cameraGone: true));
+                }
                 break;
 
             case EDSDK.StateEvent_WillSoonShutDown:
@@ -472,7 +489,7 @@ public sealed class CanonCamera : IDisposable
             case EDSDK.StateEvent_InternalError:
                 // The camera will probably not work properly anymore: drop the connection (EDSDK API reference 4.2.18).
                 _logger?.LogError("EDSDK internal error 0x{Error:X}", inParameter);
-                _thread.Post(() => DisconnectCore("EDSDK internal error"));
+                _thread.Post(() => DisconnectCore("EDSDK internal error", inContext));
                 break;
         }
 
@@ -1054,6 +1071,10 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private void SetFlashFiringCore(nint camera, bool firing)
     {
+        // Writing it while the live view runs freezes the camera (EOS R100) until it is turned off and on.
+        if (_liveViewActive)
+            throw new InvalidOperationException("The flash setting must not be written while the live view runs");
+
         try
         {
             if (_flashRef == nint.Zero)
@@ -1078,6 +1099,7 @@ public sealed class CanonCamera : IDisposable
             }
 
             _flashFiring = firing;
+            _flashFiringForced = firing;
             _flashError = null;
         }
         catch (EdsException e)
@@ -1138,10 +1160,16 @@ public sealed class CanonCamera : IDisposable
                 {
                     await RunWithBusyRetryAsync(camera =>
                     {
-                        if (!_liveViewActive)
+                        // Not when the last client left meanwhile: nothing would stop it again.
+                        if (!_liveViewActive && _liveViewRequested)
                             StartLiveViewCore(camera);
                     });
                 }
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // The outcome of the flash setting is what the caller needs; the next frame request restarts the live view.
+                _logger?.LogWarning("Could not restart the live view after the flash setting: {Message}", e.Message);
             }
             finally
             {
@@ -1162,12 +1190,16 @@ public sealed class CanonCamera : IDisposable
     {
         _liveViewRequested = true;
 
+        // The flash setting being written restarts the live view itself.
+        if (_liveViewPaused)
+            return;
+
         // Setting the flash while the live view runs freezes the camera: this is the last chance until it stops.
         if (_options.ForceFlashFiring)
         {
             await RunAsync(camera =>
             {
-                if (!_liveViewActive)
+                if (!_liveViewActive && !_flashFiringForced)
                     TrySetFlashFiring(camera, true);
             });
         }
@@ -1217,13 +1249,14 @@ public sealed class CanonCamera : IDisposable
 
     private void StopLiveViewCore(nint camera)
     {
-        if (EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device) == EDSDK.EDS_ERR_OK)
-        {
-            device &= ~(EDSDK.EvfOutputDevice_PC | EDSDK.EvfOutputDevice_PC_Small);
-            EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not stop live view");
-        }
+        // A failed read must not mark the live view stopped: a flash setting written next would freeze the camera.
+        EDSDK.EdsGetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, out uint device).ThrowIfEdSdkError("Could not read the live view output");
+        device &= ~(EDSDK.EvfOutputDevice_PC | EDSDK.EvfOutputDevice_PC_Small);
+        EDSDK.EdsSetPropertyData(camera, EDSDK.PropID_Evf_OutputDevice, 0, sizeof(uint), device).ThrowIfEdSdkError("Could not stop live view");
 
         _liveViewActive = false;
+        // The camera buttons work again: the setting may change by hand until the live view restarts.
+        _flashFiringForced = false;
         _logger?.LogInformation("Live view stopped");
     }
 

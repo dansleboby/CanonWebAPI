@@ -28,13 +28,17 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
   (503 "Camera busy"), no picture was returned, and the camera did not respond until it was turned off and on. Writing
   the flash setting during the live view freezes the camera (EOS R100), and `Canon:ForceFlashFiring` wrote it before
-  every capture. It is now written when the camera connects, before the live view starts and before a capture taken
-  without live view; `POST /flash` pauses the live view while it writes it.
+  every capture. It is now written when the camera connects, before the live view starts (once per live view session)
+  and before a capture taken without live view; `POST /flash` pauses the live view while it writes it. With
+  `Canon:ForceFlashFiring`, a value set with `POST /flash` therefore stays until the live view stops (it was set back to
+  Fire before every capture), and `GET /flash` returns the last value set while the live view runs.
 - Linux: the application crashed when the camera was turned off or unplugged. The SDK closes the session itself then,
-  and closing it again (explicitly or by releasing the camera) crashed it. The session of a camera that is gone is no
-  longer closed, as in the Canon samples, and on Linux the camera object is left to the SDK.
-- Linux: a camera turned back on or plugged back in was not reconnected, because the SDK lists it a few seconds after
-  reporting it. The connection is now retried for about 10 s.
+  and releasing the camera closed it a second time, which crashed (`CLinuxPtpHelper::Terminate` from `EdsRelease`). On
+  Linux the camera object of a camera that is gone is now left to the SDK.
+- The session of a camera that is gone (turned off, unplugged, or a call failed because it is disconnected) is no longer
+  closed before the camera is released, on Windows too, as in the Canon samples.
+- Linux: a camera turned back on or plugged back in was not reconnected, because the SDK lists it a moment after
+  reporting it (about 1 s). The connection is now retried for about 10 s.
 
 ## [1.4.0.0] - 2026-09-30
 

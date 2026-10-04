@@ -127,7 +127,7 @@ The project uses GitHub Actions for automated releases (record every change in t
 - "Device busy" answers are retried after ~500 ms, as in the Canon samples; only the shutter press is retried, the release is always sent
 - Flash (`EdsCreateFlashSettingRef`, `Flash_Target`, `Flash_Firing`): the UI must be locked while setting it; the SDK only reports values set remotely, so the setting is forced when the camera connects, before the live view starts and before a capture without live view (studio flash on the shoe in the photo booth). Never write it while the live view runs: the EOS R100 freezes (shutter busy until it is turned off and on); POST /flash pauses the live view
 - Settings: `CameraSettingRules` (pure, tested) decides what is settable per AE mode; EdsGetPropertyDesc gives the accepted values (its `form`/`access` fields are reserved, always 0); an empty list means not settable now (as in the Canon samples). Set only values from that list (API reference 3.1.20)
-- Memory management critical due to unmanaged EDSDK resources: release every ref (`EdsRelease`)
+- Memory management critical due to unmanaged EDSDK resources: release every ref (`EdsRelease`), except, on Linux, a camera that is gone: the SDK has already closed its session and releasing it crashes (`CLinuxPtpHelper::Terminate`)
 
 ## Testing
 
