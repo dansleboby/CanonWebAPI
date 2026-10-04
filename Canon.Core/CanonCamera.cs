@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -349,12 +350,28 @@ public sealed class CanonCamera : IDisposable
             return true;
         }, cancellationToken);
 
+    /// <summary>
+    /// Runs an SDK call and logs its result and duration at Debug level.
+    /// </summary>
+    private uint TraceCall(string step, Func<uint> call)
+    {
+        if (_logger is not { } logger || !logger.IsEnabled(LogLevel.Debug))
+            return call();
+
+        var start = Stopwatch.GetTimestamp();
+        var result = call();
+        logger.LogDebug("{Step}: {Result} ({Duration:0} ms)", step, EdsdkHelper.DescribeResult(result), Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        return result;
+    }
+
     #endregion
 
     #region Event handlers
 
     private uint OnCameraPropertyChanged(uint inEvent, uint inPropertyId, uint inParam, nint inContext)
     {
+        _logger?.LogDebug("SDK event {Event}: property 0x{Property:X}, parameter 0x{Parameter:X}", EdsdkHelper.DescribeEvent(inEvent), inPropertyId, inParam);
+
         if (inEvent != EDSDK.PropertyEvent_PropertyChanged || PropertyChanged == null)
             return EDSDK.EDS_ERR_OK;
 
@@ -387,6 +404,8 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private uint OnCameraStateChanged(uint inEvent, uint inParameter, nint inContext)
     {
+        _logger?.LogDebug("SDK event {Event}: parameter 0x{Parameter:X}", EdsdkHelper.DescribeEvent(inEvent), inParameter);
+
         switch (inEvent)
         {
             case EDSDK.StateEvent_Shutdown:
@@ -439,6 +458,8 @@ public sealed class CanonCamera : IDisposable
     /// </summary>
     private uint OnCameraObject(uint inEvent, nint inRef, nint inContext)
     {
+        _logger?.LogDebug("SDK event {Event}", EdsdkHelper.DescribeEvent(inEvent));
+
         try
         {
             if (inEvent == EDSDK.ObjectEvent_DirItemRequestTransfer && inRef != nint.Zero)
@@ -475,10 +496,12 @@ public sealed class CanonCamera : IDisposable
                 err.ThrowIfEdSdkError("Failed to get file info");
             }
 
+            _logger?.LogDebug("Transfer requested: {File} ({Size} bytes), pending capture: {Pending}", info.szFileName, info.Size, pending != null);
+
             if (!CaptureFileTypes.Matches(info.szFileName, pending?.FileTypes ?? _defaultFileTypes))
             {
                 _logger?.LogDebug("Skipping {File}: file type not requested", info.szFileName);
-                EDSDK.EdsDownloadCancel(dirItem);
+                TraceCall("Download cancel", () => EDSDK.EdsDownloadCancel(dirItem));
                 return;
             }
 
@@ -512,14 +535,14 @@ public sealed class CanonCamera : IDisposable
             // The progress callback must be registered before EdsDownload to be called during the transfer.
             EDSDK.EdsSetProgressCallback(stream, _onCameraProgress, EDSDK.EdsProgressOption.Periodically, nint.Zero);
 
-            err = EDSDK.EdsDownload(dirItem, info.Size, stream);
+            err = TraceCall("Download", () => EDSDK.EdsDownload(dirItem, info.Size, stream));
             if (err != EDSDK.EDS_ERR_OK)
             {
                 EDSDK.EdsDownloadCancel(dirItem);
                 err.ThrowIfEdSdkError($"Failed to download file {info.szFileName}");
             }
 
-            EDSDK.EdsDownloadComplete(dirItem).ThrowIfEdSdkError("Failed to complete download");
+            TraceCall("Download complete", () => EDSDK.EdsDownloadComplete(dirItem)).ThrowIfEdSdkError("Failed to complete download");
 
             return CopyStream(stream);
         }
@@ -768,7 +791,7 @@ public sealed class CanonCamera : IDisposable
         try
         {
             await RunWithBusyRetryAsync(camera =>
-                EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Halfway)
+                TraceCall("Press shutter button halfway", () => EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Halfway))
                     .ThrowIfEdSdkError("Could not send AF command"));
 
             try
@@ -799,7 +822,7 @@ public sealed class CanonCamera : IDisposable
             try
             {
                 await RunAsync(camera =>
-                    EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF)
+                    TraceCall("Release shutter button", () => EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF))
                         .ThrowIfEdSdkError("Could not release the shutter button"));
                 return;
             }
@@ -833,6 +856,9 @@ public sealed class CanonCamera : IDisposable
         if (acceptedTypes.Count == 0)
             acceptedTypes = _defaultFileTypes;
 
+        var clock = Stopwatch.StartNew();
+        _logger?.LogDebug("Capture requested (auto focus: {AutoFocus}, file types: {FileTypes})", useAutoFocus, string.Join(", ", acceptedTypes));
+
         await ConnectAsync();
         await _shutterLock.WaitAsync(cancellationToken);
 
@@ -862,7 +888,7 @@ public sealed class CanonCamera : IDisposable
                 try
                 {
                     await RunWithBusyRetryAsync(camera =>
-                        EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button)
+                        TraceCall($"Press shutter button ({button})", () => EDSDK.EdsSendCommand(camera, EDSDK.CameraCommand_PressShutterButton, (int)button))
                             .ThrowIfEdSdkError("Could not press the shutter button"), cancellationToken);
                     pressed = true;
                 }
@@ -871,7 +897,10 @@ public sealed class CanonCamera : IDisposable
                     await ReleaseShutterButtonAsync();
                 }
 
-                return await pending.Completion.Task.WaitAsync(timeout, cancellationToken);
+                _logger?.LogDebug("Waiting up to {Timeout} s for the file", timeout.TotalSeconds);
+                var image = await pending.Completion.Task.WaitAsync(timeout, cancellationToken);
+                _logger?.LogDebug("Capture completed in {Duration} ms: {File}", clock.ElapsedMilliseconds, image.FileName);
+                return image;
             }
             catch (TimeoutException)
             {
@@ -987,18 +1016,20 @@ public sealed class CanonCamera : IDisposable
 
             var target = string.Equals(_options.FlashTarget, "External", StringComparison.OrdinalIgnoreCase) ? 1u : 0u;
 
-            EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UILock, 1).ThrowIfEdSdkError("Could not lock the camera UI");
+            TraceCall("UI lock", () => EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UILock, 1)).ThrowIfEdSdkError("Could not lock the camera UI");
 
             try
             {
-                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Target, 0, sizeof(uint), target)
+                TraceCall("Flash target", () => EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Target, 0, sizeof(uint), target))
                     .ThrowIfEdSdkError("Could not set the flash target");
-                EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, sizeof(uint), firing ? 1u : 0u)
+                TraceCall("Flash firing", () => EDSDK.EdsSetPropertyData(_flashRef, EDSDK.PropID_Flash_Firing, 0, sizeof(uint), firing ? 1u : 0u))
                     .ThrowIfEdSdkError("Could not set flash firing (the camera must be in P, Tv, Av or M)");
             }
             finally
             {
-                EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UIUnLock, 0);
+                var unlock = TraceCall("UI unlock", () => EDSDK.EdsSendStatusCommand(camera, EDSDK.CameraState_UIUnLock, 0));
+                if (unlock != EDSDK.EDS_ERR_OK)
+                    _logger?.LogWarning("Could not unlock the camera UI: {Result}", EdsdkHelper.DescribeResult(unlock));
             }
 
             _flashFiring = firing;

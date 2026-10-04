@@ -174,7 +174,7 @@ settings that differ from the defaults, e.g.:
 | `LiveView:ErrorRetryDelayMilliseconds` | `1000` | Delay before retrying after a live view error (e.g. camera disconnected). |
 | `AutoUpdate:Enabled` | `true` | Checks for updates at startup. |
 | `AutoUpdate:Url` | GitHub Pages `autoupdate.xml` | Update feed read by AutoUpdater.NET. |
-| `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). |
+| `Logging:LogLevel` | `Default`: `Information`, `Microsoft.AspNetCore`: `Warning` | Minimum log level, by category prefix (`Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, `None`). `Canon.Core`: `Debug` logs every EDSDK event and each step of a capture (UI lock, flash settings, shutter button, transfer) with its result and duration. |
 
 ## Automatic Updates
 
@@ -232,6 +232,9 @@ Prerequisites: .NET 10 SDK and `libusb-1.0` (Ubuntu: `sudo apt install dotnet-sd
 
 ```bash
 dotnet run --project Canon.API -f net10.0 --launch-profile http
+
+# Every EDSDK event and each step of a capture (result and duration) in the logs:
+dotnet run --project Canon.API -f net10.0 --launch-profile http -- --Logging:LogLevel:Canon.Core=Debug
 ```
 
 *   The user running the API needs read/write access to the camera USB device; desktop sessions get it automatically.
