@@ -1,6 +1,7 @@
 # Linux support, step 2: a Linux package in release 1.5.0.0
 
-Date: 2026-10-04. Status: approved design.
+Date: 2026-10-04. Status: approved design, amended after the final review (udev rule with final assignments, install.sh
+checks, service hardening, invariant globalization, release token scope and dry run).
 
 ## Context
 
@@ -42,7 +43,8 @@ ARM (arm64, arm32), automatic update on Linux, `.deb` or other distribution pack
     Windows package);
   - `install.sh`, `canonwebapi.service`, `60-canonwebapi.rules` (section 2).
 - Built with `dotnet publish Canon.API/Canon.API.csproj -c Release -f net10.0 -r linux-x64 --self-contained true
-  -p:PublishSingleFile=true`. `EnableCompressionInSingleFile` applies to Linux as to Windows. No
+  -p:PublishSingleFile=true`. `EnableCompressionInSingleFile` applies to Linux as to Windows, and the `net10.0` target
+  uses `InvariantGlobalization`: the API only formats with the invariant culture, so no ICU library is needed. No
   `IncludeNativeLibrariesForSelfExtract`: nothing would be extracted (verified above), and a service user has no home
   directory to extract to.
 - The package content is defined in `Canon.API.csproj`, like the Windows DLLs: for the `net10.0` target, the files of
@@ -60,17 +62,22 @@ removes. Files in `packaging/linux/`: `install.sh`, `canonwebapi.service`, `60-c
 
 Install or update:
 
-1. Checks: root, `x86_64`, systemd present, `libusb-1.0.so.0` known to `ldconfig`. When libusb is missing, prints
-   `sudo apt install libusb-1.0-0` and stops (no package installed by the script).
+1. Checks, before anything changes: root, systemd running as init (`/run/systemd/system`), `x86_64`,
+   `libusb-1.0.so.0` known to `ldconfig`, and the package files next to the script (`Canon.API`, `libEDSDK.so`,
+   `canonwebapi.service`, `60-canonwebapi.rules`; the installed copy in `/opt/canonwebapi` only uninstalls). When
+   libusb is missing, prints `sudo apt install libusb-1.0-0` and stops (no package installed by the script).
 2. Creates the system user `canonwebapi` when missing: no login shell, no home directory.
 3. Stops the service when it runs (update).
 4. Copies the program files to `/opt/canonwebapi`, owned by root. `logs/` is owned by `canonwebapi`. An existing
    `appsettings.Local.json` is never overwritten or removed; none is created.
-5. Installs `/etc/udev/rules.d/60-canonwebapi.rules`, then reloads udev and triggers Canon devices:
-   `SUBSYSTEM=="usb", ATTR{idVendor}=="04a9", MODE="0660", GROUP="canonwebapi"`. Desktop users keep their own access
-   (the `uaccess` ACL is separate from the group).
-6. Installs `/etc/systemd/system/canonwebapi.service`, reloads systemd, enables and (re)starts the service, then
-   prints its status and the URL.
+5. Installs `/etc/udev/rules.d/60-canonwebapi.rules`, reloads udev, replays an `add` event for the Canon USB devices
+   and waits for udev (`udevadm settle`). The rule gives Canon PTP cameras (interface `06/01/01`) `MODE:="0660"`,
+   `GROUP:="canonwebapi"`: final assignments, because `60-libgphoto2*.rules` sorts after it and sets `MODE="0664",
+   GROUP="plugdev"` on `add` and `bind` (it skips `change` events, so a `change` trigger would hide the problem until
+   the next replug or reboot). Canon printers and scanners are untouched. Desktop users keep their own access (the
+   `uaccess` ACL is separate from the group).
+6. Installs `/etc/systemd/system/canonwebapi.service`, reloads systemd, enables and (re)starts the service, waits 3 s
+   and fails, pointing to `journalctl -u canonwebapi`, when it is not active; then prints the URL and its status.
 
 Service unit:
 
@@ -86,16 +93,25 @@ WorkingDirectory=/opt/canonwebapi
 ExecStart=/opt/canonwebapi/Canon.API
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+No `PrivateDevices` (USB camera), `MemoryDenyWriteExecute` (JIT) or `RestrictAddressFamilies` (hot plug uses netlink).
+`ProtectSystem=full` leaves `/opt` writable for the logs. A fatal startup error (port in use, invalid
+`appsettings.Local.json`) exits with code 1, so `Restart=on-failure` applies.
+
 systemd stops it with SIGTERM: ASP.NET Core shuts down cleanly and closes the camera session. Logs: the API files in
 `/opt/canonwebapi/logs/` and `journalctl -u canonwebapi` (console output).
 
-Uninstall: stops and disables the service, removes the unit, the udev rule, `/opt/canonwebapi` (settings and logs
-included) and the `canonwebapi` user.
+Uninstall: stops and disables the service, removes the unit and the udev rule (then replays the `add` event, so a
+plugged camera gets its default ownership back), `/opt/canonwebapi` (settings and logs included) and the
+`canonwebapi` user.
 
 Update: extract the new archive, run its `install.sh`.
 
@@ -114,13 +130,20 @@ PowerShell 7 is installed on the GitHub Windows and Ubuntu runners.
    commit to build and the version.
 2. `windows` (windows-latest) and `linux` (ubuntu-latest), in parallel, both on the prepared commit: restore, build,
    test, publish their runtime, `Test-Package.ps1`, then archive (`CanonWebAPI.zip` with `Compress-Archive` as today,
-   `CanonWebAPI-linux-x64.tar.gz` with `tar`) and upload it as a workflow artifact.
+   `CanonWebAPI-linux-x64.tar.gz` with `tar`, files owned by root in the archive) and upload it as a workflow
+   artifact. Both time out after 30 minutes.
 3. `release` (ubuntu-latest), when both succeeded: downloads the two archives, creates the GitHub release with both
-   (generated notes, as today), then writes and commits `docs/autoupdate.xml` (Windows zip URL, as today).
+   (generated notes, as today), then writes and commits `docs/autoupdate.xml` (Windows zip URL and UTF-8 BOM, as
+   today).
 
-When the Windows or Linux job fails, nothing is released and the feed is not updated. The workflow can also be run by
-hand from the Actions tab (`workflow_dispatch`): a dry run of `prepare` (no tag check, no version commit), `windows` and
-`linux` that publishes nothing, to check the pipeline on `main` before tagging.
+Token scope: `contents: read` for the workflow; only `prepare` and `release` get `contents: write`. The build jobs run
+NuGet build logic and the tests, so their checkout does not persist credentials.
+
+When the Windows or Linux job fails, nothing is released and the feed is not updated. When the `release` job fails
+after creating the release, the feed is not updated and the booths stay on the previous version: rerun the failed job.
+The workflow can also be run by hand from the Actions tab (`workflow_dispatch`): a dry run of `prepare` (no tag check,
+no version commit), `windows`, `linux` and `release` (downloads both packages and generates the XML) that creates no
+release and pushes nothing, to check the pipeline on `main` before tagging.
 
 `.github/workflows/ci.yml` (pull requests and `main`): the Windows job also publishes win-x64 and runs
 `Test-Package.ps1`; a new Linux job (ubuntu-latest) restores, builds, tests, publishes linux-x64 and runs

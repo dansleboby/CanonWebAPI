@@ -338,7 +338,7 @@ update check out of the generator, which runs the application's entry point.
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows 10/11 (x64): `CanonWebAPI.zip`; Linux x64 (glibc 2.27+, `libusb-1.0`): `CanonWebAPI-linux-x64.tar.gz` (see [Installing on Linux](#installing-on-linux))
+*   **OS**: Windows 10/11 (x64): `CanonWebAPI.zip`; Linux x64 (glibc 2.27+, libstdc++ from GCC 7+, `libusb-1.0`): `CanonWebAPI-linux-x64.tar.gz` (see [Installing on Linux](#installing-on-linux))
 *   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 
