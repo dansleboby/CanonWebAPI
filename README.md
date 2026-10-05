@@ -202,7 +202,8 @@ sudo ./install.sh    # or as a service started at boot
 ```
 
 `install.sh` copies the files to `/opt/canonwebapi`, creates the `canonwebapi` system user, adds a udev rule that lets
-it open Canon cameras (USB vendor `04a9`), then installs, enables and starts the `canonwebapi` systemd service.
+it open Canon cameras (USB vendor `04a9`, PTP interface), then installs, enables and starts the `canonwebapi` systemd
+service.
 
 *   Settings: `/opt/canonwebapi/appsettings.Local.json` (kept by updates), then `sudo systemctl restart canonwebapi`.
 *   Logs: `/opt/canonwebapi/logs/` and `journalctl -u canonwebapi`; state: `systemctl status canonwebapi`.

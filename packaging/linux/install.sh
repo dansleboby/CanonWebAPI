@@ -17,11 +17,20 @@ fail() {
     exit 1
 }
 
+# Applies the udev rules to a plugged camera as at boot or replug (60-libgphoto2*.rules skips change events), then
+# waits until it has its final ownership.
+apply_camera_rules() {
+    udevadm trigger --action=add --subsystem-match=usb --attr-match=idVendor=04a9
+    udevadm settle
+}
+
 uninstall() {
     systemctl disable --now "$service" 2>/dev/null || true
     rm -f "$unit_file" "$rule_file"
     systemctl daemon-reload
     udevadm control --reload
+    # Gives a plugged camera its default ownership back.
+    apply_camera_rules
     rm -rf "$app_dir"
     if id "$user" >/dev/null 2>&1; then
         userdel "$user"
@@ -58,8 +67,7 @@ install_package() {
 
     install -o root -g root -m 644 "$package_dir/60-canonwebapi.rules" "$rule_file"
     udevadm control --reload
-    # Applies the rule to a camera that is already plugged in.
-    udevadm trigger --subsystem-match=usb --attr-match=idVendor=04a9
+    apply_camera_rules
 
     install -o root -g root -m 644 "$package_dir/canonwebapi.service" "$unit_file"
     systemctl daemon-reload
