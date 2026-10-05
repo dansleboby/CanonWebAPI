@@ -4,13 +4,15 @@
 
 A web API for remotely controlling Canon DSLR and mirrorless cameras. This project utilizes the Canon EDSDK to communicate with the camera and includes automatic update capabilities.
 
-**Current version: 1.4.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
+**Current version: 1.5.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
 
 > **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---2026-09-30).
 
 > **Upgrading from 1.2.x**: the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) now answer 409 `not-settable-in-mode` when the shooting mode locks the setting, and setting errors carry machine readable fields (`reason`, `acceptedValues`...). See [Setting errors](#setting-errors) and the [changelog](CHANGELOG.md#1300---2026-09-30).
 
 > **Upgrading from 1.3.x**: settings changed in `appsettings.json` are reset by this update: put them in `appsettings.Local.json`, which updates never overwrite (see [Configuration](#configuration)). `POST /settings` refuses unknown fields (400), and f/4.5 in 1/3 stop steps now reads `"4.5 (1/3)"` (sending `"4.5"` still works). See the [changelog](CHANGELOG.md#1400---2026-09-30).
+
+> **Upgrading from 1.4.x**: the "flash firing" setting is no longer written while the live view runs (it froze the EOS R100): with `Canon:ForceFlashFiring` it is set when the camera connects, before the live view starts and before a capture taken without live view, and a value set with `POST /flash` stays until the live view stops. Linux is supported (see [Installing on Linux](#installing-on-linux)). From the sources, `dotnet run` and `dotnet publish` need `-f net10.0-windows` or `-f net10.0`. See the [changelog](CHANGELOG.md#1500---2026-10-04).
 
 ## Features
 
@@ -187,6 +189,36 @@ This application includes automatic update functionality powered by AutoUpdater.
 
 Linux has no automatic update yet (the `net10.0` target does not include AutoUpdater.NET).
 
+## Installing on Linux
+
+Each release also provides `CanonWebAPI-linux-x64.tar.gz`: a self-contained executable for Linux x64 (no .NET to
+install) with the Linux version of the EDSDK. Requirements: x86_64 Linux with glibc 2.27 or later and libstdc++ (GCC 7
+or later), `libusb-1.0` (`sudo apt install libusb-1.0-0`), and systemd for the service; no ICU library is needed.
+Tested on Ubuntu 26.04. There is no automatic update on Linux.
+
+```bash
+tar -xzf CanonWebAPI-linux-x64.tar.gz
+cd CanonWebAPI
+./Canon.API          # by hand: http://localhost:5000
+sudo ./install.sh    # or as a service started at boot
+```
+
+`install.sh` copies the files to `/opt/canonwebapi`, creates the `canonwebapi` system user, adds a udev rule that lets
+it open Canon cameras (USB vendor `04a9`, PTP interface), then installs, enables and starts the `canonwebapi` systemd
+service. It checks the system and the package before changing anything, and fails when the service is not running a
+few seconds after its start (see `journalctl -u canonwebapi`).
+
+*   Settings: `/opt/canonwebapi/appsettings.Local.json` (kept by updates), then `sudo systemctl restart canonwebapi`.
+*   Logs: `/opt/canonwebapi/logs/` and `journalctl -u canonwebapi`; state: `systemctl status canonwebapi`.
+*   Update: extract the new archive and run its `install.sh`.
+*   Uninstall: `sudo /opt/canonwebapi/install.sh --uninstall` removes the service, the udev rule, `/opt/canonwebapi`
+    (settings and logs included) and the `canonwebapi` user.
+*   Run by hand, the API needs read/write access to the camera USB device: desktop sessions get it, otherwise install
+    the service. A desktop can mount the camera (GNOME: gvfs) and hold it: unmount it (`gio mount -l`, then
+    `gio mount -u <location>`) or disable the automount.
+*   Stop the service before running `Canon.API` by hand (`sudo systemctl stop canonwebapi`): only one program can use
+    the camera, and the service also uses port 5000.
+
 ## Development & Building
 
 ### Building from Source
@@ -211,11 +243,13 @@ dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.4.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
+2. **Tag-based releases**: Push a tag like `v1.5.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
-4. **Unit tests**: The workflow runs `Canon.Core.Tests` and `Canon.API.Tests` before packaging
-5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML
+4. **Packages**: The workflow builds and tests the solution, publishes the Windows and Linux packages and starts both to check that they load the EDSDK (`tools/Test-Package.ps1`)
+5. **Atomic release**: Only when both packages succeeded, it creates the release (`CanonWebAPI.zip`, `CanonWebAPI-linux-x64.tar.gz`), then updates the AutoUpdater XML. A failure of the build jobs publishes nothing; if the release job fails after creating the release, the feed is not updated and the photo booths stay on the previous version: rerun the failed job
 6. **GitHub releases**: Automatically creates GitHub releases with generated notes
+
+To check the pipeline before tagging, run the "Release CanonWebAPI" workflow by hand from the Actions tab (on `main`): it builds, tests and checks both packages, downloads them in the release job and generates the AutoUpdater XML, without creating a release or pushing anything.
 
 `docs/autoupdate.xml` is updated by the workflow only: changing it by hand makes every installation download that version.
 
@@ -228,7 +262,7 @@ dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 ### Running on Linux
 
 The `net10.0` target of `Canon.API` runs on Linux x64 with the Linux version of the EDSDK (`EDSDK/linux-x64/libEDSDK.so`).
-There is no automatic update and no release package for Linux yet: run it from the sources.
+To run a release, see [Installing on Linux](#installing-on-linux); this section runs it from the sources.
 
 Prerequisites: .NET 10 SDK and `libusb-1.0` (Ubuntu: `sudo apt install dotnet-sdk-10.0 libusb-1.0-0`).
 
@@ -306,7 +340,7 @@ update check out of the generator, which runs the application's entry point.
 *   **Canon T7** ✅
 
 ### System Requirements
-*   **OS**: Windows 10/11 (x64); Linux x64 from the sources (see [Running on Linux](#running-on-linux))
+*   **OS**: Windows 10/11 (x64): `CanonWebAPI.zip`; Linux x64 (glibc 2.27+, libstdc++ from GCC 7+, `libusb-1.0`): `CanonWebAPI-linux-x64.tar.gz` (see [Installing on Linux](#installing-on-linux))
 *   **Runtime**: none to install: the release is a self-contained executable (.NET 10)
 *   **Dependencies**: Canon EDSDK 13.20.21 64-bit libraries (included; up to 1.0.0.11: EDSDK 13.19.0)
 

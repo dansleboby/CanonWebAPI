@@ -1,0 +1,4 @@
+# CanonWebAPI: Canon PTP cameras can be opened by the canonwebapi service user.
+# Final assignments: 60-libgphoto2*.rules sorts after this file and sets MODE="0664", GROUP="plugdev" on add/bind.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{ID_USB_INTERFACES}=="", IMPORT{builtin}="usb_id"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="04a9", ENV{ID_USB_INTERFACES}=="*:060101:*", MODE:="0660", GROUP:="canonwebapi"

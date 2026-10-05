@@ -75,6 +75,8 @@ try
 catch (Exception ex) when (ex is not HostAbortedException)
 {
     Log.Fatal(ex, "Application startup failed");
+    // Launchers and systemd (Restart=on-failure) only see the failure through a non-zero exit code.
+    Environment.ExitCode = 1;
 }
 finally
 {

@@ -8,9 +8,9 @@
 	  <PlatformTarget>x64</PlatformTarget>
 
     <!-- Assembly Version Configuration -->
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
-    <Version>1.4.0.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
+    <Version>1.5.0.0</Version>
 
     <!-- OpenAPI document generated at build time only when requested (see README). Keep false: the package's outer-build hook
          would otherwise generate from net10.0-windows before every solution build. -->
@@ -26,6 +26,14 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Linux package: compressed single file (the publish command line makes it self-contained and single file), and
+       invariant globalization so that no ICU library is needed (the API only uses the invariant culture). No native
+       library self-extraction: none is needed, and the service user has no home directory to extract to. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
@@ -78,6 +86,11 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
+  </ItemGroup>
+
+  <!-- Linux package: installer, systemd service and udev rule next to the executable (publish only). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <None Include="..\packaging\linux\*" Link="%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>

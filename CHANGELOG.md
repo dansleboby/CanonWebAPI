@@ -7,11 +7,16 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+## [1.5.0.0] - 2026-10-04
+
 ### Added
+- Linux package in every release: `CanonWebAPI-linux-x64.tar.gz`, a self-contained executable for Linux x64 (no .NET
+  or ICU to install) with the Linux EDSDK, and `install.sh`, which installs it as a systemd service with the USB
+  access it needs (`/opt/canonwebapi`, `canonwebapi` user, udev rule); `install.sh --uninstall` removes it.
 - `tools/Test-Camera.ps1` (with `Test-Camera.cmd`): runs the photo booth camera checks against the API (live view,
   captures, flash changes during the live view, power cycle) and saves the pictures, the results and the API log.
 - Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK
-  (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update and no release package on Linux yet.
+  (`EDSDK/linux-x64/libEDSDK.so`, needs `libusb-1.0`). No automatic update on Linux.
 - Debug logs (`Logging:LogLevel:Canon.Core` = `Debug`): every EDSDK event, and each step of a capture (UI lock, flash
   settings, shutter button, transfer) with its result and duration.
 
@@ -19,12 +24,21 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - `Canon.API` has two target frameworks: `dotnet run` and `dotnet publish` need `-f net10.0-windows` (Windows) or
   `-f net10.0` (Linux). `Canon.Core` and the unit tests target `net10.0`.
 - A failed UI unlock after setting the flash is logged as a warning; it was ignored.
+- A fatal startup error (e.g. port already in use, invalid `appsettings.Local.json`) now exits with code 1. It exited
+  with code 0, so launchers and systemd did not see the failure.
 - The problem title returned when the Canon EDSDK cannot be loaded now names both platforms: "Canon EDSDK could not be
   loaded (EDSDK.dll or libEDSDK.so missing, wrong architecture, or libusb-1.0 missing on Linux)" (was "...(EDSDK.dll
   missing or wrong architecture)"). Client-visible text.
 - Regenerating `docs/openapi.json` at build time now uses
   `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments` (Windows or Linux); the former
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
+- CI builds and tests on Windows and Linux, then publishes the Windows and Linux packages and starts them to check that
+  they load the EDSDK (`tools/Test-Package.ps1`). The published Windows executable was never run before a release.
+- The release workflow builds, tests and checks the Windows and Linux packages in parallel, and creates the release
+  (both packages) and updates the AutoUpdater XML only when both succeeded. It can be run by hand from the Actions tab
+  as a dry run: it also downloads both packages and generates the AutoUpdater XML in the release job, but creates no
+  release and pushes nothing. The build jobs get a read-only token: only the jobs that push or publish can write to
+  the repository.
 
 ### Fixed
 - The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
@@ -250,7 +264,8 @@ First release.
 - Automatic updates with AutoUpdater.NET, from GitHub releases.
 - CI/CD workflow building the release package.
 
-[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.4.0.0...HEAD
+[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.5.0.0...HEAD
+[1.5.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.4.0.0...v1.5.0.0
 [1.4.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.3.0.0...v1.4.0.0
 [1.3.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.2.0.0...v1.3.0.0
 [1.2.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...v1.2.0.0

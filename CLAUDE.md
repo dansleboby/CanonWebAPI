@@ -30,7 +30,8 @@ The solution consists of 4 projects:
 ### Dependencies
 
 - Requires Canon EDSDK 13.20.21 **64-bit** DLLs (`EDSDK.dll`, `EdsImage.dll`, from `EDSDK_64/Dll` of the SDK) in the EDSDK folder
-- Linux: `EDSDK/linux-x64/libEDSDK.so` (from `EDSDK/Library/x86_64` of the 13.20.21 Linux SDK), needs `libusb-1.0`
+- Linux: `EDSDK/linux-x64/libEDSDK.so` (from `EDSDK/Library/x86_64` of the 13.20.21 Linux SDK), needs `libusb-1.0`; the `net10.0` target uses invariant globalization (no ICU needed: only the invariant culture is used)
+- Linux package (`packaging/linux/`): the udev rule uses final assignments (`MODE:=`, `GROUP:=`) because `60-libgphoto2*.rules` sorts after it and sets `GROUP="plugdev"` on add/bind; `install.sh` applies it with an add event (libgphoto2 skips change events)
 - Uses Serilog for logging
 - Swagger/OpenAPI for API documentation
 - Platform target: x64 (Windows; Linux through the `net10.0` target of Canon.API)
@@ -89,7 +90,7 @@ Errors are problem details: 400 invalid value, 409 capture refused or setting lo
 - The camera can be connected via USB before or after the application starts (automatic connection and reconnection)
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
-- Canon.Core and the tests target `net10.0`; Canon.API targets `net10.0-windows` (release, AutoUpdater.NET) and `net10.0` (Linux). Publish the release with `-f net10.0-windows`
+- Canon.Core and the tests target `net10.0`; Canon.API targets `net10.0-windows` (Windows release, AutoUpdater.NET) and `net10.0` (Linux). The release publishes the Windows package with `-f net10.0-windows -r win-x64` and the Linux package with `-f net10.0 -r linux-x64` (both self-contained single files)
 - Uses structured logging with Serilog (logs to console and `logs/canon-api.log` next to the executable; levels from `Logging:LogLevel`)
 - Content root is the executable folder: settings files are read next to the executable whatever the working directory
 - Operator settings go in `appsettings.Local.json`, never shipped: automatic updates overwrite `appsettings.json`
@@ -110,11 +111,11 @@ The application includes AutoUpdater.NET with these configurations:
 ## Release Process
 
 The project uses GitHub Actions for automated releases (record every change in the `Unreleased` section of `CHANGELOG.md`; never edit `docs/autoupdate.xml` by hand):
-- Trigger: Push tags matching `v*` pattern
-- Workflow compares tag version with project file versions
-- Updates project files automatically if versions don't match
-- Creates GitHub releases with packaged binaries
-- Updates AutoUpdater XML automatically
+- Trigger: push a tag matching `v*` on the latest commit of `main` (or run the workflow by hand: dry run, nothing published)
+- `prepare` job: checks the tag, compares the tag version with the project versions and commits them if they differ
+- `windows` and `linux` jobs, in parallel: build, test, publish `CanonWebAPI.zip` (win-x64) and `CanonWebAPI-linux-x64.tar.gz` (linux-x64, with `packaging/linux/`), and start each package with `tools/Test-Package.ps1`
+- `release` job, only when both succeeded: creates the GitHub release with both packages and updates the AutoUpdater XML (Windows package, written with a UTF-8 BOM as it always was); a dry run only downloads the packages and generates the XML
+- Token scope: `contents: read` for the workflow and no persisted credentials in the build jobs (they run NuGet build logic and the tests); only `prepare` and `release` get `contents: write`
 
 ## EDSDK Integration Notes
 
@@ -133,4 +134,5 @@ The project uses GitHub Actions for automated releases (record every change in t
 
 - **Canon.Core.Tests**: xUnit tests of the logic that does not need a camera (value tables, settings rules, timeouts, file types, CanonThread, LiveViewBroadcaster, EDSDK structure layouts)
 - **Canon.API.Tests**: xUnit tests of the error mapping (CameraExceptionHandler), the request models and the log levels
+- CI (pull requests and `main`): build and tests on Windows and Linux runners, then both packages are published and started by `tools/Test-Package.ps1`, which checks that they load the EDSDK (`/status`: "No Canon camera detected")
 - End-to-end testing requires a physical Canon camera connected via USB (not possible in Windows containers)
