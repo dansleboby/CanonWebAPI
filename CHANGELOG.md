@@ -34,7 +34,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
   they load the EDSDK (`tools/Test-Package.ps1`). The published Windows executable was never run before a release.
 - The release workflow builds, tests and checks the Windows and Linux packages in parallel, and creates the release
   (both packages) and updates the AutoUpdater XML only when both succeeded. It can be run by hand from the Actions tab
-  as a dry run that publishes nothing.
+  as a dry run that publishes nothing. The build jobs get a read-only token: only the jobs that push or publish can
+  write to the repository.
 
 ### Fixed
 - The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
