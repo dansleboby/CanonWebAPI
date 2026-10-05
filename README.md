@@ -214,6 +214,8 @@ few seconds after its start (see `journalctl -u canonwebapi`).
 *   Run by hand, the API needs read/write access to the camera USB device: desktop sessions get it, otherwise install
     the service. A desktop can mount the camera (GNOME: gvfs) and hold it: unmount it (`gio mount -l`, then
     `gio mount -u <location>`) or disable the automount.
+*   Stop the service before running `Canon.API` by hand (`sudo systemctl stop canonwebapi`): only one program can use
+    the camera, and the service also uses port 5000.
 
 ## Development & Building
 

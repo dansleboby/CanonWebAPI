@@ -90,7 +90,7 @@ Errors are problem details: 400 invalid value, 409 capture refused or setting lo
 - The camera can be connected via USB before or after the application starts (automatic connection and reconnection)
 - Canon EOS Utility must NOT be running (conflicts with EDSDK access)
 - Requires compatible Canon camera with EDSDK support
-- Canon.Core and the tests target `net10.0`; Canon.API targets `net10.0-windows` (release, AutoUpdater.NET) and `net10.0` (Linux). Publish the release with `-f net10.0-windows`
+- Canon.Core and the tests target `net10.0`; Canon.API targets `net10.0-windows` (Windows release, AutoUpdater.NET) and `net10.0` (Linux). The release publishes the Windows package with `-f net10.0-windows -r win-x64` and the Linux package with `-f net10.0 -r linux-x64` (both self-contained single files)
 - Uses structured logging with Serilog (logs to console and `logs/canon-api.log` next to the executable; levels from `Logging:LogLevel`)
 - Content root is the executable folder: settings files are read next to the executable whatever the working directory
 - Operator settings go in `appsettings.Local.json`, never shipped: automatic updates overwrite `appsettings.json`
