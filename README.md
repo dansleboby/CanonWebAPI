@@ -4,13 +4,15 @@
 
 A web API for remotely controlling Canon DSLR and mirrorless cameras. This project utilizes the Canon EDSDK to communicate with the camera and includes automatic update capabilities.
 
-**Current version: 1.4.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
+**Current version: 1.5.0.0** (.NET 10, Canon EDSDK 13.20.21). See the [changelog](CHANGELOG.md) for the changes of each version.
 
 > **Upgrading from 1.0.x**: errors are now returned as problem details with new status codes (e.g. 503 when the camera is not connected, 504 instead of 408 on capture timeout), and values unknown to the value tables are returned in hexadecimal (`"0x99"`). See the [changelog](CHANGELOG.md#1100---2026-09-30).
 
 > **Upgrading from 1.2.x**: the setters (`/iso`, `/aperture`, `/shutterspeed`, `/exposure`, `/whitebalance`) now answer 409 `not-settable-in-mode` when the shooting mode locks the setting, and setting errors carry machine readable fields (`reason`, `acceptedValues`...). See [Setting errors](#setting-errors) and the [changelog](CHANGELOG.md#1300---2026-09-30).
 
 > **Upgrading from 1.3.x**: settings changed in `appsettings.json` are reset by this update: put them in `appsettings.Local.json`, which updates never overwrite (see [Configuration](#configuration)). `POST /settings` refuses unknown fields (400), and f/4.5 in 1/3 stop steps now reads `"4.5 (1/3)"` (sending `"4.5"` still works). See the [changelog](CHANGELOG.md#1400---2026-09-30).
+
+> **Upgrading from 1.4.x**: the "flash firing" setting is no longer written while the live view runs (it froze the EOS R100): with `Canon:ForceFlashFiring` it is set when the camera connects, before the live view starts and before a capture taken without live view, and a value set with `POST /flash` stays until the live view stops. Linux is supported (see [Installing on Linux](#installing-on-linux)). From the sources, `dotnet run` and `dotnet publish` need `-f net10.0-windows` or `-f net10.0`. See the [changelog](CHANGELOG.md#1500---2026-10-04).
 
 ## Features
 
@@ -241,7 +243,7 @@ dotnet run --project Canon.API -f net10.0-windows   # on Linux: -f net10.0
 This project uses automated GitHub Actions for releases:
 
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
-2. **Tag-based releases**: Push a tag like `v1.4.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
+2. **Tag-based releases**: Push a tag like `v1.5.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
 4. **Packages**: The workflow builds and tests the solution, publishes the Windows and Linux packages and starts both to check that they load the EDSDK (`tools/Test-Package.ps1`)
 5. **Atomic release**: Only when both packages succeeded, it creates the release (`CanonWebAPI.zip`, `CanonWebAPI-linux-x64.tar.gz`), then updates the AutoUpdater XML. A failure of the build jobs publishes nothing; if the release job fails after creating the release, the feed is not updated and the photo booths stay on the previous version: rerun the failed job

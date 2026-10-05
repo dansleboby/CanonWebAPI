@@ -7,6 +7,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 
 ## [Unreleased]
 
+## [1.5.0.0] - 2026-10-04
+
 ### Added
 - Linux package in every release: `CanonWebAPI-linux-x64.tar.gz`, a self-contained executable for Linux x64 (no .NET
   or ICU to install) with the Linux EDSDK, and `install.sh`, which installs it as a systemd service with the USB
@@ -262,7 +264,8 @@ First release.
 - Automatic updates with AutoUpdater.NET, from GitHub releases.
 - CI/CD workflow building the release package.
 
-[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.4.0.0...HEAD
+[Unreleased]: https://github.com/dansleboby/CanonWebAPI/compare/v1.5.0.0...HEAD
+[1.5.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.4.0.0...v1.5.0.0
 [1.4.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.3.0.0...v1.4.0.0
 [1.3.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.2.0.0...v1.3.0.0
 [1.2.0.0]: https://github.com/dansleboby/CanonWebAPI/compare/v1.1.0.0...v1.2.0.0
