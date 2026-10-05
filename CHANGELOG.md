@@ -22,6 +22,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - `Canon.API` has two target frameworks: `dotnet run` and `dotnet publish` need `-f net10.0-windows` (Windows) or
   `-f net10.0` (Linux). `Canon.Core` and the unit tests target `net10.0`.
 - A failed UI unlock after setting the flash is logged as a warning; it was ignored.
+- A fatal startup error (e.g. port already in use, invalid `appsettings.Local.json`) now exits with code 1. It exited
+  with code 0, so launchers and systemd did not see the failure.
 - The problem title returned when the Canon EDSDK cannot be loaded now names both platforms: "Canon EDSDK could not be
   loaded (EDSDK.dll or libEDSDK.so missing, wrong architecture, or libusb-1.0 missing on Linux)" (was "...(EDSDK.dll
   missing or wrong architecture)"). Client-visible text.
