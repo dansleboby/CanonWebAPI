@@ -133,4 +133,5 @@ The project uses GitHub Actions for automated releases (record every change in t
 
 - **Canon.Core.Tests**: xUnit tests of the logic that does not need a camera (value tables, settings rules, timeouts, file types, CanonThread, LiveViewBroadcaster, EDSDK structure layouts)
 - **Canon.API.Tests**: xUnit tests of the error mapping (CameraExceptionHandler), the request models and the log levels
+- CI (pull requests and `main`): build and tests on Windows and Linux runners, then both packages are published and started by `tools/Test-Package.ps1`, which checks that they load the EDSDK (`/status`: "No Canon camera detected")
 - End-to-end testing requires a physical Canon camera connected via USB (not possible in Windows containers)

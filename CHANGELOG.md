@@ -28,6 +28,8 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 - Regenerating `docs/openapi.json` at build time now uses
   `dotnet build Canon.API -f net10.0 -t:Build -t:GenerateOpenApiDocuments` (Windows or Linux); the former
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
+- CI builds and tests on Windows and Linux, then publishes the Windows and Linux packages and starts them to check that
+  they load the EDSDK (`tools/Test-Package.ps1`). The published Windows executable was never run before a release.
 
 ### Fixed
 - The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
