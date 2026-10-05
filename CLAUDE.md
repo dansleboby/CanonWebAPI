@@ -114,7 +114,7 @@ The project uses GitHub Actions for automated releases (record every change in t
 - Trigger: push a tag matching `v*` on the latest commit of `main` (or run the workflow by hand: dry run, nothing published)
 - `prepare` job: checks the tag, compares the tag version with the project versions and commits them if they differ
 - `windows` and `linux` jobs, in parallel: build, test, publish `CanonWebAPI.zip` (win-x64) and `CanonWebAPI-linux-x64.tar.gz` (linux-x64, with `packaging/linux/`), and start each package with `tools/Test-Package.ps1`
-- `release` job, only when both succeeded: creates the GitHub release with both packages and updates the AutoUpdater XML (Windows package)
+- `release` job, only when both succeeded: creates the GitHub release with both packages and updates the AutoUpdater XML (Windows package, written with a UTF-8 BOM as it always was); a dry run only downloads the packages and generates the XML
 - Token scope: `contents: read` for the workflow and no persisted credentials in the build jobs (they run NuGet build logic and the tests); only `prepare` and `release` get `contents: write`
 
 ## EDSDK Integration Notes

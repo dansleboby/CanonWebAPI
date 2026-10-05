@@ -4,7 +4,8 @@ on:
   push:
     tags:
       - 'v*'
-  # Dry run from the Actions tab: builds, tests and checks both packages of the selected branch; publishes nothing.
+  # Dry run from the Actions tab: builds, tests and checks both packages of the selected branch, downloads them in the
+  # release job and generates the AutoUpdater XML; creates no release and pushes nothing.
   workflow_dispatch:
 
 # Read-only by default: the build jobs run NuGet build logic and the tests. Only prepare and release push or publish.
@@ -62,7 +63,6 @@ jobs:
       run: |
         $tagVersion = "${{ steps.version.outputs.VERSION }}"
 
-        # Read current version from project file
         $projectFile = "Canon.API/Canon.API.csproj"
         $projectContent = Get-Content $projectFile
         $currentVersion = ""
@@ -81,10 +81,8 @@ jobs:
           echo "VERSION_MISMATCH=true" >> $env:GITHUB_OUTPUT
           echo "Versions do not match - updating project files"
 
-          # Update Canon.API project file
           $projectContent -replace '<Version>.*</Version>', "<Version>$tagVersion</Version>" -replace '<AssemblyVersion>.*</AssemblyVersion>', "<AssemblyVersion>$tagVersion</AssemblyVersion>" -replace '<FileVersion>.*</FileVersion>', "<FileVersion>$tagVersion</FileVersion>" | Set-Content $projectFile
 
-          # Update Canon.Core project file if it has version info
           $coreProjectFile = "Canon.Core/Canon.Core.csproj"
           if (Test-Path $coreProjectFile) {
             $coreContent = Get-Content $coreProjectFile
@@ -115,6 +113,7 @@ jobs:
   windows:
     needs: prepare
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout
@@ -158,6 +157,7 @@ jobs:
   linux:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout
@@ -190,10 +190,12 @@ jobs:
       run: ./tools/Test-Package.ps1 -Executable ./package/CanonWebAPI/Canon.API
       shell: pwsh
 
+    # Owned by root when extracted with sudo: with the runner's uid, the local user with that uid could edit install.sh
+    # before root runs it.
     - name: Create the Linux archive
       run: |
         chmod 755 package/CanonWebAPI/Canon.API package/CanonWebAPI/install.sh
-        tar -czf CanonWebAPI-linux-x64.tar.gz -C package CanonWebAPI
+        tar --owner=0 --group=0 --numeric-owner -czf CanonWebAPI-linux-x64.tar.gz -C package CanonWebAPI
 
     - name: Upload the Linux archive
       uses: actions/upload-artifact@v4
@@ -202,19 +204,18 @@ jobs:
         path: CanonWebAPI-linux-x64.tar.gz
         if-no-files-found: error
 
-  # Only when both packages were built and checked: a failure publishes nothing and leaves the photo booths alone.
+  # Runs only when both packages were built and checked. A dry run stops before publishing: no release, no push.
   release:
     needs: [prepare, windows, linux]
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-    - name: Checkout main
+    - name: Checkout
       uses: actions/checkout@v5
       with:
-        ref: main
+        ref: ${{ github.event_name == 'push' && 'main' || github.ref }}
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -224,7 +225,12 @@ jobs:
         path: packages
         merge-multiple: true
 
+    - name: List the packages
+      shell: pwsh
+      run: Get-ChildItem packages
+
     - name: Create GitHub Release
+      if: github.event_name == 'push'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
@@ -242,12 +248,10 @@ jobs:
         $version = "${{ needs.prepare.outputs.version }}"
         $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/CanonWebAPI.zip"
 
-        # Create docs folder if it doesn't exist
         if (!(Test-Path "docs")) {
           New-Item -ItemType Directory -Path "docs"
         }
 
-        # Create AutoUpdater XML content
         $xmlContent = @"
         <?xml version="1.0" encoding="UTF-8"?>
         <item>
@@ -258,9 +262,12 @@ jobs:
         </item>
         "@
 
-        $xmlContent | Out-File -FilePath "docs/autoupdate.xml" -Encoding UTF8
+        # The feed has always started with a BOM (written by Windows PowerShell); pwsh's UTF8 would drop it.
+        $xmlContent | Out-File -FilePath "docs/autoupdate.xml" -Encoding utf8BOM
+        Get-Content docs/autoupdate.xml
 
     - name: Commit AutoUpdater XML
+      if: github.event_name == 'push'
       shell: pwsh
       run: |
         git config --local user.email "action@github.com"

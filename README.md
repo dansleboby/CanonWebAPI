@@ -242,10 +242,10 @@ This project uses automated GitHub Actions for releases:
 2. **Tag-based releases**: Push a tag like `v1.4.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
 4. **Packages**: The workflow builds and tests the solution, publishes the Windows and Linux packages and starts both to check that they load the EDSDK (`tools/Test-Package.ps1`)
-5. **Atomic release**: Only when both packages succeeded, it creates the release (`CanonWebAPI.zip`, `CanonWebAPI-linux-x64.tar.gz`) and updates the AutoUpdater XML; a failure publishes nothing
+5. **Atomic release**: Only when both packages succeeded, it creates the release (`CanonWebAPI.zip`, `CanonWebAPI-linux-x64.tar.gz`), then updates the AutoUpdater XML. A failure of the build jobs publishes nothing; if the release job fails after creating the release, the feed is not updated and the photo booths stay on the previous version: rerun the failed job
 6. **GitHub releases**: Automatically creates GitHub releases with generated notes
 
-To check the pipeline before tagging, run the "Release CanonWebAPI" workflow by hand from the Actions tab (on `main`): it builds, tests and checks both packages and publishes nothing.
+To check the pipeline before tagging, run the "Release CanonWebAPI" workflow by hand from the Actions tab (on `main`): it builds, tests and checks both packages, downloads them in the release job and generates the AutoUpdater XML, without creating a release or pushing anything.
 
 `docs/autoupdate.xml` is updated by the workflow only: changing it by hand makes every installation download that version.
 
