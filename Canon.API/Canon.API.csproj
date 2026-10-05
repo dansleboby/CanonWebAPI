@@ -28,10 +28,12 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
-  <!-- Linux package (self-contained single file for linux-x64). No native library self-extraction: none is needed,
-       and a service user has no home directory to extract to. -->
+  <!-- Linux package: compressed single file (the publish command line makes it self-contained and single file), and
+       invariant globalization so that no ICU library is needed (the API only uses the invariant culture). No native
+       library self-extraction: none is needed, and the service user has no home directory to extract to. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

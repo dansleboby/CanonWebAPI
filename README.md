@@ -190,9 +190,9 @@ Linux has no automatic update yet (the `net10.0` target does not include AutoUpd
 ## Installing on Linux
 
 Each release also provides `CanonWebAPI-linux-x64.tar.gz`: a self-contained executable for Linux x64 (no .NET to
-install) with the Linux version of the EDSDK. Requirements: glibc 2.27 or later (e.g. Ubuntu 18.04, Debian 10 or
-later), `libusb-1.0` (`sudo apt install libusb-1.0-0`), and systemd for the service. There is no automatic update on
-Linux.
+install) with the Linux version of the EDSDK. Requirements: x86_64 Linux with glibc 2.27 or later and libstdc++ (GCC 7
+or later), `libusb-1.0` (`sudo apt install libusb-1.0-0`), and systemd for the service; no ICU library is needed.
+Tested on Ubuntu 26.04. There is no automatic update on Linux.
 
 ```bash
 tar -xzf CanonWebAPI-linux-x64.tar.gz

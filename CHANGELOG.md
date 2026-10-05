@@ -8,9 +8,9 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
 ## [Unreleased]
 
 ### Added
-- Linux package in every release: `CanonWebAPI-linux-x64.tar.gz`, a self-contained executable for Linux x64 with the
-  Linux EDSDK, and `install.sh`, which installs it as a systemd service with the USB access it needs
-  (`/opt/canonwebapi`, `canonwebapi` user, udev rule); `install.sh --uninstall` removes it.
+- Linux package in every release: `CanonWebAPI-linux-x64.tar.gz`, a self-contained executable for Linux x64 (no .NET
+  or ICU to install) with the Linux EDSDK, and `install.sh`, which installs it as a systemd service with the USB
+  access it needs (`/opt/canonwebapi`, `canonwebapi` user, udev rule); `install.sh --uninstall` removes it.
 - `tools/Test-Camera.ps1` (with `Test-Camera.cmd`): runs the photo booth camera checks against the API (live view,
   captures, flash changes during the live view, power cycle) and saves the pictures, the results and the API log.
 - Linux x64 support: the `net10.0` target of `Canon.API` runs on Linux with the Linux version of the EDSDK

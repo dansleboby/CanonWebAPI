@@ -30,7 +30,7 @@ The solution consists of 4 projects:
 ### Dependencies
 
 - Requires Canon EDSDK 13.20.21 **64-bit** DLLs (`EDSDK.dll`, `EdsImage.dll`, from `EDSDK_64/Dll` of the SDK) in the EDSDK folder
-- Linux: `EDSDK/linux-x64/libEDSDK.so` (from `EDSDK/Library/x86_64` of the 13.20.21 Linux SDK), needs `libusb-1.0`
+- Linux: `EDSDK/linux-x64/libEDSDK.so` (from `EDSDK/Library/x86_64` of the 13.20.21 Linux SDK), needs `libusb-1.0`; the `net10.0` target uses invariant globalization (no ICU needed: only the invariant culture is used)
 - Linux package (`packaging/linux/`): the udev rule uses final assignments (`MODE:=`, `GROUP:=`) because `60-libgphoto2*.rules` sorts after it and sets `GROUP="plugdev"` on add/bind; `install.sh` applies it with an add event (libgphoto2 skips change events)
 - Uses Serilog for logging
 - Swagger/OpenAPI for API documentation
