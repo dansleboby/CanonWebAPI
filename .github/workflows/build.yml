@@ -4,25 +4,32 @@ on:
   push:
     tags:
       - 'v*'
+  # Dry run from the Actions tab: builds, tests and checks both packages of the selected branch; publishes nothing.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
-    
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.commit.outputs.SHA }}
+      version: ${{ steps.version.outputs.VERSION }}
+
     steps:
-    - name: Checkout main branch
+    # A release is built from main: this workflow commits the version and the AutoUpdater XML to it.
+    - name: Checkout
       uses: actions/checkout@v5
       with:
-        ref: main
+        ref: ${{ github.event_name == 'push' && 'main' || github.ref }}
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    # The release is built from main (the workflow commits the version and AutoUpdater XML to it).
-    # Refuse to release if main is not the tagged commit, so the package always matches the tag.
+    # Refuse to release if main is not the tagged commit, so the packages always match the tag.
     - name: Check that the tag points to main
+      if: github.event_name == 'push'
+      shell: pwsh
       run: |
         $mainSha = git rev-parse HEAD
         $tagSha = "${{ github.sha }}"
@@ -31,48 +38,49 @@ jobs:
           exit 1
         }
         echo "Tag ${{ github.ref_name }} matches main ($mainSha)"
-      shell: powershell
-      
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
-        
-    - name: Extract version from tag
+
+    - name: Get the version
       id: version
+      shell: pwsh
       run: |
-        $tagName = "${{ github.ref }}" -replace 'refs/tags/v', ''
-        echo "VERSION=$tagName" >> $env:GITHUB_OUTPUT
-        echo "Tag version: $tagName"
-      shell: powershell
-        
+        if ("${{ github.event_name }}" -eq "push") {
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+        }
+        else {
+          $version = [regex]::Match((Get-Content Canon.API/Canon.API.csproj -Raw), '<Version>(.*)</Version>').Groups[1].Value
+        }
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        echo "Version: $version"
+
     - name: Check and update project version
+      if: github.event_name == 'push'
       id: version_check
+      shell: pwsh
       run: |
         $tagVersion = "${{ steps.version.outputs.VERSION }}"
-        
+
         # Read current version from project file
         $projectFile = "Canon.API/Canon.API.csproj"
         $projectContent = Get-Content $projectFile
         $currentVersion = ""
-        
+
         foreach ($line in $projectContent) {
           if ($line -match '<Version>(.*)</Version>') {
             $currentVersion = $matches[1]
             break
           }
         }
-        
+
         echo "Current project version: $currentVersion"
         echo "Tag version: $tagVersion"
-        
+
         if ($currentVersion -ne $tagVersion) {
           echo "VERSION_MISMATCH=true" >> $env:GITHUB_OUTPUT
           echo "Versions do not match - updating project files"
-          
+
           # Update Canon.API project file
           $projectContent -replace '<Version>.*</Version>', "<Version>$tagVersion</Version>" -replace '<AssemblyVersion>.*</AssemblyVersion>', "<AssemblyVersion>$tagVersion</AssemblyVersion>" -replace '<FileVersion>.*</FileVersion>', "<FileVersion>$tagVersion</FileVersion>" | Set-Content $projectFile
-          
+
           # Update Canon.Core project file if it has version info
           $coreProjectFile = "Canon.Core/Canon.Core.csproj"
           if (Test-Path $coreProjectFile) {
@@ -85,53 +93,153 @@ jobs:
           echo "VERSION_MISMATCH=false" >> $env:GITHUB_OUTPUT
           echo "Versions match - no update needed"
         }
-      shell: powershell
-        
+
     - name: Commit version updates
-      if: steps.version_check.outputs.VERSION_MISMATCH == 'true'
+      if: github.event_name == 'push' && steps.version_check.outputs.VERSION_MISMATCH == 'true'
+      shell: pwsh
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add "*.csproj"
         git commit -m "Update project versions to ${{ steps.version.outputs.VERSION }}"
         git push origin main
-      shell: powershell
-        
+
+    - name: Commit to build
+      id: commit
+      shell: pwsh
+      run: echo "SHA=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        ref: ${{ needs.prepare.outputs.sha }}
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
     - name: Restore dependencies
       run: dotnet restore CanonSDK.sln
-      
+
     - name: Build solution
       run: dotnet build CanonSDK.sln --configuration Release --no-restore
 
     - name: Run unit tests
       run: dotnet test CanonSDK.sln --configuration Release --no-build
-      
-    - name: Publish Canon.API as standalone executable
+
+    - name: Publish the Windows package
       run: dotnet publish Canon.API/Canon.API.csproj --configuration Release --framework net10.0-windows --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output ./publish
-      
-    - name: Create release package
-      run: |
-        Compress-Archive -Path "./publish/*" -DestinationPath "./CanonWebAPI.zip"
+
+    - name: Check that the Windows package starts and loads the EDSDK
+      run: ./tools/Test-Package.ps1 -Executable ./publish/Canon.API.exe
+      shell: pwsh
+
+    - name: Create the Windows archive
+      run: Compress-Archive -Path "./publish/*" -DestinationPath "./CanonWebAPI.zip"
       shell: powershell
+
+    - name: Upload the Windows archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-package
+        path: CanonWebAPI.zip
+        if-no-files-found: error
+
+  linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        ref: ${{ needs.prepare.outputs.sha }}
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Install libusb (needed by the Linux EDSDK)
+      run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0
+
+    - name: Restore dependencies
+      run: dotnet restore CanonSDK.sln
+
+    - name: Build solution
+      run: dotnet build CanonSDK.sln --configuration Release --no-restore
+
+    - name: Run unit tests
+      run: dotnet test CanonSDK.sln --configuration Release --no-build
+
+    - name: Publish the Linux package
+      run: dotnet publish Canon.API/Canon.API.csproj --configuration Release --framework net10.0 --runtime linux-x64 --self-contained true -p:PublishSingleFile=true --output ./package/CanonWebAPI
+
+    - name: Check that the Linux package starts and loads the EDSDK
+      run: ./tools/Test-Package.ps1 -Executable ./package/CanonWebAPI/Canon.API
+      shell: pwsh
+
+    - name: Create the Linux archive
+      run: |
+        chmod 755 package/CanonWebAPI/Canon.API package/CanonWebAPI/install.sh
+        tar -czf CanonWebAPI-linux-x64.tar.gz -C package CanonWebAPI
+
+    - name: Upload the Linux archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-package
+        path: CanonWebAPI-linux-x64.tar.gz
+        if-no-files-found: error
+
+  # Only when both packages were built and checked: a failure publishes nothing and leaves the photo booths alone.
+  release:
+    needs: [prepare, windows, linux]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout main
+      uses: actions/checkout@v5
+      with:
+        ref: main
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download the packages
+      uses: actions/download-artifact@v4
+      with:
+        path: packages
+        merge-multiple: true
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: ./CanonWebAPI.zip
+        tag_name: ${{ github.ref_name }}
+        files: |
+          packages/CanonWebAPI.zip
+          packages/CanonWebAPI-linux-x64.tar.gz
+        fail_on_unmatched_files: true
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
+
     - name: Update AutoUpdater XML
+      shell: pwsh
       run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
+        $version = "${{ needs.prepare.outputs.version }}"
         $releaseUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/CanonWebAPI.zip"
-        
+
         # Create docs folder if it doesn't exist
         if (!(Test-Path "docs")) {
           New-Item -ItemType Directory -Path "docs"
         }
-        
+
         # Create AutoUpdater XML content
         $xmlContent = @"
         <?xml version="1.0" encoding="UTF-8"?>
@@ -142,17 +250,16 @@ jobs:
           <mandatory>true</mandatory>
         </item>
         "@
-        
+
         $xmlContent | Out-File -FilePath "docs/autoupdate.xml" -Encoding UTF8
-      shell: powershell
-      
+
     - name: Commit AutoUpdater XML
+      shell: pwsh
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add docs/autoupdate.xml
         if (!(git diff --staged --quiet)) {
-          git commit -m "Update AutoUpdater XML for version ${{ steps.version.outputs.VERSION }}"
+          git commit -m "Update AutoUpdater XML for version ${{ needs.prepare.outputs.version }}"
           git push origin main
         }
-      shell: powershell

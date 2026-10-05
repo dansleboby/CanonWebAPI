@@ -239,9 +239,11 @@ This project uses automated GitHub Actions for releases:
 1. **Changelog**: Move the changes of the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under the new version and date, and update the version in `Canon.API/Canon.API.csproj`
 2. **Tag-based releases**: Push a tag like `v1.4.0.0` on the latest commit of `main` to trigger automated build and release (the workflow refuses a tag on another commit)
 3. **Version synchronization**: The workflow automatically updates project versions to match the tag
-4. **Unit tests**: The workflow runs `Canon.Core.Tests` and `Canon.API.Tests` before packaging
-5. **Automatic packaging**: Creates release packages and updates the AutoUpdater XML
+4. **Packages**: The workflow builds and tests the solution, publishes the Windows and Linux packages and starts both to check that they load the EDSDK (`tools/Test-Package.ps1`)
+5. **Atomic release**: Only when both packages succeeded, it creates the release (`CanonWebAPI.zip`, `CanonWebAPI-linux-x64.tar.gz`) and updates the AutoUpdater XML; a failure publishes nothing
 6. **GitHub releases**: Automatically creates GitHub releases with generated notes
+
+To check the pipeline before tagging, run the "Release CanonWebAPI" workflow by hand from the Actions tab (on `main`): it builds, tests and checks both packages and publishes nothing.
 
 `docs/autoupdate.xml` is updated by the workflow only: changing it by hand makes every installation download that version.
 

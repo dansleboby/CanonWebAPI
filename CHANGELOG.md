@@ -30,6 +30,9 @@ Versions match the Git tags (`v1.0.0.11`) that trigger the release workflow.
   `-p:OpenApiGenerateDocumentsOnBuild=true` form generates nothing now that `Canon.API` has two target frameworks.
 - CI builds and tests on Windows and Linux, then publishes the Windows and Linux packages and starts them to check that
   they load the EDSDK (`tools/Test-Package.ps1`). The published Windows executable was never run before a release.
+- The release workflow builds, tests and checks the Windows and Linux packages in parallel, and creates the release
+  (both packages) and updates the AutoUpdater XML only when both succeeded. It can be run by hand from the Actions tab
+  as a dry run that publishes nothing.
 
 ### Fixed
 - The camera froze when a picture was taken while the live view ran, as in the photo booth: the shutter stayed busy
